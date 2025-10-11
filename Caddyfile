@@ -1,0 +1,23 @@
+{
+	frankenphp
+	# Ensure our custom handler directive is ordered relative to others
+	# order websocket before file_server
+	websocket {
+		address 127.0.0.1:5001 # Optional
+		worker ./public/websocket-worker.php # Optional
+		min_threads 5 # Optional, defaults to runtime.NumCPU()
+	}
+}
+
+localhost {
+	root * ./public
+	route {
+		handle_path /ws/* {
+			route {
+				websocket
+			}
+		}
+		php_server
+		file_server
+	}
+}
