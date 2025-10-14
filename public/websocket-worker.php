@@ -17,10 +17,13 @@ $handler = static function (array $event): array  {
         $data = json_decode($event['Payload'],true);
         if ($data['type'] == 'auth')
         {
+            file_put_contents('php://stderr', var_export($data,true) . "\n");
+
             // very simple auth example
-            if ($data['login'] == 'user1' && $data['password'] == 'pass1')
+            if ($data['password'] == 'pass')
             {
-                frankenphp_ws_send($event['Connection'], json_encode(['type' => 'auth', 'status' => 'ok']));
+                frankenphp_ws_setStoredInformation($event['Connection'],'login',$data['login']);
+                frankenphp_ws_send($event['Connection'], json_encode(['type' => 'auth', 'status' => 'ok' , 'login' => $data['login']]));
             }
             else
             {
@@ -28,25 +31,84 @@ $handler = static function (array $event): array  {
             }
         }
 
+        if (frankenphp_ws_getStoredInformation($event['Connection'],'login') == '')
+        {
+            frankenphp_ws_send($event['Connection'], json_encode(['type' => 'notauth', 'status' => 'error' , 'message' => 'You must be connected to use this service']));
+            return ['ok' => true];
+        }
+
         if ($data['type'] == 'enterRoom')
         {
-            // very simple auth example
+
+            // If user is in room , disconnect it and inform users
+            $currentRoom = frankenphp_ws_getStoredInformation($event['Connection'],'currentRoom');
+            if ($currentRoom != '')
+            {
+                $oldRoom = frankenphp_ws_getStoredInformation($event['Connection'],'currentRoom');
+                frankenphp_ws_setStoredInformation($event['Connection'],'currentRoom','');
+                $clients = frankenphp_ws_getClientsByTag('room_' . $oldRoom);
+                $list = [];
+                foreach ($clients as $client)
+                {
+                    $list[] = frankenphp_ws_getStoredInformation($client,'login');
+                }
+                frankenphp_ws_send($event['Connection'], json_encode(['type' => 'userOutRoom', 'room' => $data['name'] , 'user' => frankenphp_ws_getStoredInformation($event['Connection'],'login')]));
+            }
+
+            $clients = frankenphp_ws_getClientsByTag('room_' . $data['name']);
+            $list = [];
+            foreach ($clients as $client)
+            {
+                $list[] = frankenphp_ws_getStoredInformation($client,'login');
+                frankenphp_ws_send($client, json_encode(['type' => 'userInRoom', 'room' => $data['name'] , 'user' => frankenphp_ws_getStoredInformation($event['Connection'],'login')  ]));
+            }
+
             frankenphp_ws_tagClient($event['Connection'], 'room_' . $data['name']);
-            // $currentRoom = frankenphp_ws_setStoredInformations($event['Connection'],'currentRoom','general');
-            $currentRoom = 'general' ;
-            frankenphp_ws_send($event['Connection'], json_encode(['type' => 'enterRoom', 'status' => 'ok' , 'name' => $currentRoom]));
+            frankenphp_ws_setStoredInformation($event['Connection'],'currentRoom',$data['name']);
+            frankenphp_ws_send($event['Connection'], json_encode(['type' => 'enterRoom', 'status' => 'ok' , 'name' => $data['name']]));
+
+            // add me
+            $list[] = frankenphp_ws_getStoredInformation($event['Connection'],'login');
+            frankenphp_ws_send($event['Connection'], json_encode(['type' => 'listRoom', 'room' => $data['name'] , 'list' => $list]));
+
         }
 
         if ($data['type'] == 'writeRoom')
         {
             // broadcast to all clients in the same room
-            //$currentRoom = frankenphp_ws_getStoredInformations($event['Connection'],'currentRoom');
-            $currentRoom = 'general' ;
-            frankenphp_ws_sendToTag('room_' . $currentRoom, json_encode(['type' => 'messageRoom', 'from' => $event['Connection'] ,  'name' => $currentRoom, 'payload' => $data['message']]));
+            $currentRoom = frankenphp_ws_getStoredInformation($event['Connection'],'currentRoom');
+            frankenphp_ws_sendToTag('room_' . $currentRoom, json_encode(['type' => 'messageRoom', 'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login') ,  'name' => $currentRoom, 'payload' => $data['message']]));
 
         }
     }
 
+
+    if ($event['Type'] == 'beforeClose')
+    {
+
+        file_put_contents('php://stderr', "Connection before closed: " . $event['Connection'] . "\n");
+
+        file_put_contents('php://stderr', var_export($event,true) . "\n");
+
+        // si on a un currentRoom on le vide et informe les users
+        $currentRoom = frankenphp_ws_getStoredInformation($event['Connection'],'currentRoom'); // debug todo : voir si on a tjr les info ici
+        file_put_contents('php://stderr', "CURRENT ROOM : " . $currentRoom. "\n");
+
+        $currentUser = frankenphp_ws_getStoredInformation($event['Connection'],'login');
+
+        file_put_contents('php://stderr', "CURRENT USER : " . $currentUser. "\n");
+        if ($currentRoom != '')
+        {
+            // BUG : si on lance, 3 bouton , f5 , (close) => relaunch => tt planté
+            frankenphp_ws_setStoredInformation($event['Connection'],'currentRoom','');
+//            file_put_contents('php://stderr', "SEND TO ROOM_" . $currentRoom. " that user : " . $currentUser. " exit ! \n");
+
+            // cette ligne pose pb ! (on envoi sur un tag qui est en cours de fermeture)
+            frankenphp_ws_sendToTag('room_' . $currentRoom, json_encode(['type' => 'userOutRoom', 'room' => $currentRoom , 'user' => $currentUser]));
+        }
+
+
+    }
 
     if ($event['Type'] == 'close')
     {

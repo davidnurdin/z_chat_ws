@@ -10,6 +10,7 @@
 
 <div class="example-wrapper">
 
+    <input type="text" id="login" value="user1" />
     <textarea id="debug" cols="130" rows="10"></textarea>
 
     <input type="button" id="btn" value="Authenticate" onclick="authenticate()">
@@ -36,7 +37,7 @@
 
         function authenticate() {
             // send from socket a packet to auth in JSON
-            let trame = { 'type' : 'auth' , 'login' : 'user1', 'password' : 'pass1' };
+            let trame = { 'type' : 'auth' , 'login' : document.getElementById('login').value , 'password' : 'pass' };
             socket.send(JSON.stringify(trame));
             document.getElementById('debug').value += "Authentication sent...\n";
 
@@ -56,6 +57,9 @@
                 reader.onload = function() {
                     let text = reader.result;
                     json = JSON.parse(text);
+
+                    console.log(json);
+
                     if (json.type == 'message')
                     {
                         document.getElementById('debug').value += json.payload + "\n" ;
@@ -67,6 +71,7 @@
                         {
                             document.getElementById('debug').value += "Authentication successful\n";
                             // send a message to the server
+                            document.title = json.login ;
                         }
                         else
                         {
@@ -101,6 +106,11 @@
                     if (json.type == 'messageRoom')
                     {
                         document.getElementById('debug').value += "Room " + json.name + " from " + json.from + " : " + json.payload + "\n";
+                    }
+
+                    if (json.type == 'listRoom')
+                    {
+                        //console.log(json);
                     }
 
                 };
