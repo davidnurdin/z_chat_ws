@@ -15,6 +15,7 @@
     <input type="button" id="btn3" value="Write COUCOU to ROOM" onclick="writeRoom('coucou')">
     <input type="button" id="btn4" value="get ROOMS list" onclick="getRoomsList()">
     <input type="button" id="btn5" value="Write COUCOU to user1" onclick="writePrivate('coucou','user1')">
+    <input type="button" id="btn6" value="List ALL USERS by type" onclick="listAllUsersByType('standardUser')">
 
 
     <br>
@@ -25,15 +26,33 @@
     <textarea id="listUser" cols="130" rows="10"></textarea>
     <textarea id="room" cols="130" rows="10"></textarea>
     <textarea id="roomsList" cols="130" rows="10"></textarea>
+    <textarea id="private" cols="130" rows="10"></textarea>
 
 
 
     <script>
 
+
+
+        setInterval(function(){
+
+            let trame = {'type': 'getTimePing'};
+            socket.send(JSON.stringify(trame));
+            document.getElementById('debug').value += "get Time Ping sent...\n";
+        },30000);
+
+        function listAllUsersByType(type)
+        {
+            let trame = {'type': 'listAllUsers', 'userType': type};
+            socket.send(JSON.stringify(trame));
+            document.getElementById('debug').value += "List all users sent...\n";
+
+        }
+
         function getRoomsList()
         {
             // send from socket a packet to get rooms list in JSON
-            let trame = {'type': 'getRoomsList'};
+            let trame = {'type': 'listRoom'};
             socket.send(JSON.stringify(trame));
             document.getElementById('debug').value += "Get rooms list sent...\n";
         }
@@ -71,9 +90,21 @@
         }
         // connect with wss on wss://localhost
         const socket = new WebSocket('wss://localhost/ws/chat');
-        socket.addEventListener('open', function (event) {
+
+        // Attach event handler to mark this client as alive when pinged.
+
+
+        // view pong on websocket
+        socket.addEventListener('open', function (ws_client_stream) {
             // socket.send('Hello Server!');
             document.getElementById('debug').value += "WebSocket is connected...\n";
+
+            socket.addEventListener('close', function() {
+                console.log('WebSocket is closed...');
+            });
+
+
+
         });
         socket.addEventListener('message', function (event) {
 
@@ -101,8 +132,13 @@
                         }
                         else
                         {
-                            document.getElementById('debug').value += "Authentication failed\n";
+                            document.getElementById('debug').value += "Authentication failed : " + json.reason + "\n";
                         }
+                    }
+
+                    if (json.type == 'countAll')
+                    {
+                        document.getElementById('debug').value += "Count all users : " + json.count + "\n";
                     }
 
                     if (json.type == 'enterRoom')
@@ -134,12 +170,21 @@
                         document.getElementById('room').value += "Room " + json.name + " from " + json.from + " : " + json.payload + "\n";
                     }
 
+                    if (json.type == 'messagePrivate')
+                    {
+                        document.getElementById('private').value += "Private message from " + json.from + " : " + json.payload + "\n";
+                    }
+
                     if (json.type == 'listUserInRoom')
                     {
                         //console.log(json);
                         document.getElementById('listUser').value += "List of room (" + json.room + ") : " + json.list + "\n";
                     }
 
+                    if (json.type == 'listAllUsers')
+                    {
+                        document.getElementById('listUser').value += "List of all users : " + json.list + "\n";
+                    }
                     if (json.type == 'userInRoom')
                     {
                         document.getElementById('listUser').value += "IN ROOM : " + json.room + " => " + json.user + "\n";
