@@ -14,6 +14,7 @@
     <input type="button" id="btn2" value="Enter Room" onclick="enterRoom(document.getElementById('goroom').value)">
     <input type="button" id="btn3" value="Write COUCOU to ROOM" onclick="writeRoom('coucou')">
     <input type="button" id="btn4" value="get ROOMS list" onclick="getRoomsList()">
+    <input type="button" id="btn5" value="Write COUCOU to user1" onclick="writePrivate('coucou','user1')">
 
 
     <br>
@@ -35,6 +36,14 @@
             let trame = {'type': 'getRoomsList'};
             socket.send(JSON.stringify(trame));
             document.getElementById('debug').value += "Get rooms list sent...\n";
+        }
+
+        function writePrivate(message,to)
+        {
+            let trame = {'type': 'writePrivate', 'message': message, 'to': to};
+            socket.send(JSON.stringify(trame));
+            document.getElementById('debug').value += "Message " + message + " sent to " + to + "...\n";
+
         }
         function writeRoom(message) {
             // send from socket a packet to write in a room in JSON

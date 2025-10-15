@@ -62,17 +62,6 @@ $handler = static function (array $event): array  {
                 frankenphp_ws_setStoredInformation($event['Connection'],'currentRoom','');
                 frankenphp_ws_untagClient($event['Connection'], 'room_' . $oldRoom);
                 frankenphp_ws_sendToTag('room_' . $oldRoom, json_encode(['type' => 'userOutRoom', 'room' => $currentRoom , 'user' => frankenphp_ws_getStoredInformation($event['Connection'],'login')]));
-
-                /*
-                $clients = frankenphp_ws_getClientsByTag('room_' . $oldRoom);
-                $list = [];
-                foreach ($clients as $client)
-                {
-                    $list[] = frankenphp_ws_getStoredInformation($client,'login');
-                }
-                frankenphp_ws_send($event['Connection'], json_encode(['type' => 'userOutRoom', 'room' => $data['name'] , 'user' => frankenphp_ws_getStoredInformation($event['Connection'],'login')]));
-                */
-
             }
 
             $clients = frankenphp_ws_getClientsByTag('room_' . $data['name']);
@@ -100,6 +89,27 @@ $handler = static function (array $event): array  {
             frankenphp_ws_sendToTag('room_' . $currentRoom, json_encode(['type' => 'messageRoom', 'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login') ,  'name' => $currentRoom, 'payload' => $data['message']]));
 
         }
+
+        if ($data['type'] == 'writePrivate')
+        {
+            // FRANKENPHP_WS_OP_EQ << voir pourquoi la constante ne fonctionne pas
+            $clientTo = frankenphp_ws_searchStoredInformation('login','eq',$data['to']);
+            file_put_contents('php://stderr', var_export($clientTo,true) . "\n");
+
+            if (count($clientTo) > 0)
+            {
+                // Send private
+                frankenphp_ws_send($clientTo[0],json_encode(['type' => 'messagePrivate', 'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login') ,  'payload' => $data['message']]));
+            }
+
+            // TODO
+            // Soit on gère coté serveur via login<>ConnectionId
+            // Soit on envois les ConnectionId des users dans la room (et autre)
+            // Soit on expose une api pour recup les connectionID ?
+            // IDK.
+
+        }
+
 
 
     }
