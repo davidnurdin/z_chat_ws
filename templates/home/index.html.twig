@@ -190,13 +190,13 @@
     const isActive = btn.classList.contains('active');
     if(!isActive) btn.classList.add('notify');
   }
-  document.getElementById('tabs').addEventListener('click', function(e){
+  function handleTabSelectionFromEvent(e){
     const btn = e.target.closest('.tab');
     if(!btn) return;
     const target = btn.dataset.target;
     if(target) {
       activateTabByTarget(target);
-      // Auto-refresh when clicking certain tabs
+      // Auto-refresh when selecting certain tabs (click or hover)
       if (target === 'panel-rooms'){
         const panel = document.getElementById('roomsListPanel');
         if(panel) panel.innerHTML = '';
@@ -206,7 +206,7 @@
         if(panel) panel.innerHTML = '';
         listAllUsersByType('standardUser');
       }
-      // Focus the composer input when clicking a private tab
+      // Focus the composer input when selecting a private tab
       if (typeof target === 'string' && target.indexOf('panel-private-') === 0) {
         const p = document.getElementById(target);
         if (p) {
@@ -215,7 +215,56 @@
         }
       }
     }
+  }
+  document.getElementById('tabs').addEventListener('click', function(e){
+    handleTabSelectionFromEvent(e);
   });
+
+  // Keyboard navigation across tabs with Ctrl+ArrowLeft/Right
+  (function(){
+    function isEditableTarget(el){
+      if(!el) return false;
+      const tn = el.tagName;
+      if (tn === 'INPUT' || tn === 'TEXTAREA') return true;
+      if (el.isContentEditable) return true;
+      return false;
+    }
+    function getVisibleTabs(){
+      return Array.from(document.querySelectorAll('.tab')).filter(btn => btn.offsetParent !== null);
+    }
+    window.addEventListener('keydown', function(e){
+      if (!e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const tgt = e.target;
+      // Previously ignored editable targets (inputs/textarea). Now allow Ctrl+Arrow to work everywhere, including inside editors.
+      const tabs = getVisibleTabs();
+      if (tabs.length === 0) return;
+      const activeIdx = tabs.findIndex(t => t.classList.contains('active'));
+      if (activeIdx === -1) return;
+      let nextIdx = activeIdx;
+      if (e.key === 'ArrowRight') {
+        nextIdx = (activeIdx + 1) % tabs.length;
+      } else if (e.key === 'ArrowLeft') {
+        nextIdx = (activeIdx - 1 + tabs.length) % tabs.length;
+      }
+      const next = tabs[nextIdx];
+      if (next && next.dataset && next.dataset.target){
+        e.preventDefault();
+        const target = next.dataset.target;
+        activateTabByTarget(target);
+        // Trigger the same auto-refresh behavior when navigating with keyboard
+        if (target === 'panel-rooms'){
+          const panel = document.getElementById('roomsListPanel');
+          if(panel) panel.innerHTML = '';
+          getRoomsList();
+        } else if (target === 'panel-users'){
+          const panel = document.getElementById('usersListPanel');
+          if(panel) panel.innerHTML = '';
+          listAllUsersByType('standardUser');
+        }
+      }
+    });
+  })();
 
   // Join room on double-click in rooms list
   (function(){
@@ -497,6 +546,8 @@
           debugLog((json.status==='ok' ? 'Entered room successfully' : 'Failed to enter room') + '\n');
           if(json.status==='ok' && json.name){
             setCurrentRoomName(json.name);
+            // Clear previous room messages when entering a new room
+            try { const box = document.getElementById('currentRoomMessages'); if (box) box.innerHTML = ''; } catch(_) {}
             currentRoomUsers = new Set();
             renderCurrentRoomUsers();
             appendMessage('currentRoomMessages', 'Entrée dans le salon: ' + json.name);
