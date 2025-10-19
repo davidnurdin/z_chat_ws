@@ -20,8 +20,9 @@
   .tabs { border-bottom: 1px solid #ddd; display: flex; gap: 4px; overflow-x: auto; padding: .25rem .5rem; }
   .tab { appearance: none; background: #f2f2f2; border: 1px solid #ddd; border-bottom: none; border-top-left-radius: 8px; border-top-right-radius: 8px; padding: .5rem .75rem; cursor: pointer; }
   .tab.active { background: white; border-color: #ccc; font-weight: 600; }
-  .tab.closeable { position: relative; padding-right: 1.6rem; }
-  .tab .close { position: absolute; right: .4rem; top: .25rem; color: #888; cursor: pointer; font-weight: 700; }
+  .tab.closeable { position: relative; padding-right: 2.2rem; }
+  .tab .close { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); color: #666; cursor: pointer; font-weight: 700; line-height: 1; width: 1.4rem; height: 1.4rem; display: flex; align-items: center; justify-content: center; border-radius: 999px; }
+  .tab .close:hover { background: rgba(0,0,0,0.08); color: #111; }
   /* Flashing attention state for tabs */
   .tab.notify { animation: tab-flash 1.2s ease-in-out infinite; border-color: #eab308; }
   @keyframes tab-flash { 0% { background: #fff59d; } 50% { background: #ffec82; } 100% { background: #fff59d; } }
@@ -57,11 +58,20 @@
   #roomsListPanel .room-item { cursor: pointer; }
 
   .messages { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: .5rem; background: #fafafa; }
-  .msg { margin: .25rem 0; }
+  .msg { margin: .25rem 0; padding: .2rem .35rem; border-radius: 4px; transition: background-color .15s ease, color .15s ease; }
+  .msg:hover { background: #f0f2f5; }
+  .msg.self { font-weight: 700; }
   .msg .meta { color: #666; font-size: .85em; }
+  #usersListPanel .msg,
+  #currentRoomUsers .msg,
+  #currentRoomMessages .msg { cursor: pointer; }
 
-  .composer { display: flex; gap: .5rem; margin-top: .5rem; }
-  .composer input[type=text] { flex: 1; }
+  .composer { --composer-h: 42px; display: flex; align-items: stretch; gap: .5rem; margin-top: .5rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: .4rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .composer textarea, .composer input[type=text] { flex: 1; border: none; outline: none; padding: 0 .65rem; border-radius: 8px; background: #f9fafb; resize: none; max-height: 140px; height: var(--composer-h); min-height: var(--composer-h); line-height: 1.3; }
+  .composer textarea:focus, .composer input[type=text]:focus { background: #f3f4f6; }
+  .composer .send-btn { appearance: none; border: none; background: #2563eb; color: #fff; padding: 0 .9rem; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; height: var(--composer-h); min-height: var(--composer-h); }
+  .composer .send-btn:hover { background: #1d4ed8; }
+  .composer .send-btn:active { transform: translateY(1px); }
 
   .muted { color: #6b7280; }
   .small { font-size: .85em; }
@@ -69,11 +79,27 @@
   /* Debug panel full height */
   #panel-infos.panel.active { display: flex; flex-direction: column; }
   .debug { width: 100%; flex: 1; min-height: 0; }
+  /* Mobile responsiveness */
+  @media (max-width: 900px) {
+    body { font-size: 15px; }
+    .controls { padding: .5rem; gap: .4rem; }
+    .tab { padding: .5rem .6rem; }
+    .current-room { flex-direction: column; }
+    .current-room .right { width: auto; border-left: none; border-top: 1px solid #eee; padding-left: 0; padding-top: .5rem; }
+    .rooms-layout { flex-direction: column; }
+    .rooms-layout .right { width: auto; border-left: none; border-top: 1px solid #eee; padding-left: 0; padding-top: .5rem; }
+    .composer { gap: .4rem; }
+    .messages { padding: .4rem; }
+  }
+  /* Prefer dynamic viewport on mobile UAs that support it */
+  @supports (height: 100dvh) {
+    .chat-wrapper { height: calc(100dvh - var(--sf-toolbar-height, 0px)); }
+  }
 </style>
 
 <div class="chat-wrapper">
   <div class="controls">
-    <input type="text" id="login" value="user1" placeholder="login" />
+    <input type="text" id="login" value="" placeholder="login" />
     <input type="button" id="btn1" value="Authenticate" onclick="authenticate()">
   </div>
 
@@ -112,8 +138,8 @@
           <div class="title small muted">Messages du salon</div>
           <div class="messages" id="currentRoomMessages"></div>
           <div class="composer">
-            <input type="text" id="roomInput" placeholder="Votre message au salon en cours..." onkeypress="if(event.key==='Enter'){ writeRoom(this.value); this.value=''; }" />
-            <input type="button" value="Envoyer" onclick="(function(){ const el=document.getElementById('roomInput'); writeRoom(el.value); el.value=''; })()">
+            <input type="text" id="roomInput" placeholder="Votre message au salon en cours..." onkeydown="if(event.key==='Enter'){ event.preventDefault(); sendFromComposer(this,'room'); }" />
+            <button class="send-btn" title="Envoyer" onclick="sendFromComposer(document.getElementById('roomInput'),'room')">-&gt;</button>
           </div>
         </div>
         <div class="right">
@@ -125,7 +151,7 @@
 
     <div class="panel active" id="panel-infos">
       <div class="small muted">Informations / Debug</div>
-      <textarea id="debug" class="debug"></textarea>
+      <div id="debugMessages" class="messages"></div>
     </div>
 
     <!-- Private panels will be appended here -->
@@ -159,6 +185,50 @@
     var ticks = 0; var iv = setInterval(function(){ recalcToolbarInset(); if(++ticks > 10) clearInterval(iv); }, 300);
   })();
 
+  // Random pseudo generation for default login
+  (function initRandomLogin(){
+    function generateRandomPseudo(){
+      var adjectives = [
+        'Agile','Brave','Calm','Daring','Eager','Fierce','Gentle','Happy','Icy','Jolly',
+        'Kind','Lively','Mighty','Nimble','Odd','Proud','Quick','Royal','Sunny','Tricky',
+        'Ultra','Vivid','Witty','Xtra','Young','Zesty','Amber','Bold','Crimson','Dusty',
+        'Emerald','Fluffy','Golden','Hazel','Indigo','Jade','Khaki','Lunar','Mango','Nova',
+        'Ocean','Plum','Quartz','Ruby','Silver','Teal','Umber','Velvet','Walnut','Xenon',
+        'Yellow','Zen','Arctic','Blazing','Crystal','Deep','Electric','Frosty','Glowing','Honey',
+        'Iron','Jazzy','Keen','Lucky','Magic','Neon','Obsidian','Polar','Quiet','Rapid',
+        'Silent','Turbo','Urban','Vast','Wild','Xtreme','Youngster','Zephyr','Atomic','Binary',
+        'Cosmic','Digital','Epic','Fusion','Galactic','Hyper','Ion','Jet','Kinetic','Logic'
+      ];
+      var animals = [
+        'Falcon','Tiger','Panther','Wolf','Eagle','Lion','Leopard','Cobra','Viper','Shark',
+        'Puma','Lynx','Fox','Bear','Bison','Hawk','Raven','Otter','Seal','Whale',
+        'Dolphin','Orca','Moose','Deer','Horse','Badger','Beaver','Marten','Sable','Boar',
+        'Panda','Gorilla','Koala','Kangaroo','Gazelle','Antelope','Rhino','Hippo','Giraffe','Zebra',
+        'Penguin','Albatross','Pelican','Heron','Crane','Swan','Duck','Goose','Owl','Condor',
+        'Python','Anaconda','Iguana','Gecko','Chameleon','Dragon','Phoenix','Griffin','Hydra','Minotaur',
+        'Mustang','Stallion','Buffalo','Cheetah','Jaguar','Mongoose','Raccoon','Skunk','Squirrel','Weasel',
+        'Stingray','Manta','Barracuda','Marlin','Swordfish','Tuna','Salmon','Trout','Carp','Catfish'
+      ];
+      function pick(arr){ return arr[(Math.random()*arr.length)|0]; }
+      var name = pick(adjectives) + pick(animals) + (100 + ((Math.random()*9900)|0));
+      return name;
+    }
+    function assign(){
+      try {
+        var el = document.getElementById('login');
+        if(!el) return;
+        if(!el.value || el.value === 'user1'){
+          el.value = generateRandomPseudo();
+        }
+      } catch(_){}
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', assign);
+    } else {
+      assign();
+    }
+  })();
+
   // Tab logic
   function getTabButtonByTarget(targetId){
     return Array.from(document.querySelectorAll('.tab')).find(t => t.dataset.target === targetId) || null;
@@ -178,7 +248,7 @@
       } else if (typeof targetId === 'string' && targetId.indexOf('panel-private-') === 0) {
         const p = document.getElementById(targetId);
         if (p) {
-          const input = p.querySelector('input[type="text"]');
+          const input = p.querySelector('textarea, input[type="text"]');
           if (input) { input.focus(); input.select && input.select(); }
         }
       }
@@ -189,6 +259,29 @@
     if(!btn) return;
     const isActive = btn.classList.contains('active');
     if(!isActive) btn.classList.add('notify');
+  }
+  // Autosize helper for nicer multi-line composers
+  function autosizeTextarea(el){
+    if(!el) return;
+    if (el.tagName !== 'TEXTAREA') return;
+    try {
+      el.style.height = 'auto';
+      const max = 140; // px
+      el.style.height = Math.min(max, el.scrollHeight) + 'px';
+    } catch(_){}
+  }
+  // Generic send helper for composers (room/private)
+  function sendFromComposer(el, type, toUser){
+    if(!el) return;
+    const value = (el.value || '').trim();
+    if(!value) return;
+    if(type === 'room'){
+      writeRoom(value);
+    } else if (type === 'private'){
+      writePrivate(value, toUser);
+    }
+    el.value = '';
+    autosizeTextarea(el);
   }
   function handleTabSelectionFromEvent(e){
     const btn = e.target.closest('.tab');
@@ -210,8 +303,8 @@
       if (typeof target === 'string' && target.indexOf('panel-private-') === 0) {
         const p = document.getElementById(target);
         if (p) {
-          const input = p.querySelector('input[type="text"]');
-          if (input) { try { input.focus(); input.select(); } catch(_){} }
+          const input = p.querySelector('textarea, input[type="text"]');
+          if (input) { try { input.focus(); input.select && input.select(); } catch(_){} }
         }
       }
     }
@@ -266,7 +359,64 @@
     });
   })();
 
-  // Join room on double-click in rooms list
+  // Close active private tab on Escape key: go to next private if any, else go to Salon
+  (function(){
+    window.addEventListener('keydown', function(e){
+      if (e.key !== 'Escape') return;
+      try {
+        const activeTabBtn = Array.from(document.querySelectorAll('.tab')).find(t => t.classList.contains('active'));
+        if (!activeTabBtn) return;
+        const target = activeTabBtn.dataset && activeTabBtn.dataset.target;
+        if (!target || target.indexOf('panel-private-') !== 0) return;
+        e.preventDefault();
+        const user = target.substring('panel-private-'.length);
+        // Find the next private tab to the right
+        const privateBtns = Array.from(document.querySelectorAll('.tab')).filter(b => b.dataset && typeof b.dataset.target === 'string' && b.dataset.target.indexOf('panel-private-') === 0);
+        const idx = privateBtns.findIndex(b => b.dataset.target === target);
+        let nextTargetId = null;
+        if (idx >= 0 && idx + 1 < privateBtns.length) {
+          nextTargetId = privateBtns[idx + 1].dataset.target;
+        }
+        // Close without auto-activating, then activate next or Salon
+        if (user) closePrivateUI(user, {after:'none'});
+        if (nextTargetId) {
+          activateTabByTarget(nextTargetId);
+        } else {
+          activateTabByTarget('panel-current');
+        }
+      } catch(_){}
+    });
+  })();
+
+  // Long-press utility for touch devices
+  function addLongPress(root, selector, handler, duration){
+    if(!root) return;
+    let timer = null;
+    let targetEl = null;
+    const threshold = typeof duration === 'number' ? duration : 550;
+    function start(e){
+      const t = e.target && e.target.closest ? e.target.closest(selector) : null;
+      if(!t || !root.contains(t)) return;
+      targetEl = t;
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        try { handler(targetEl, e); } finally { targetEl = null; }
+      }, threshold);
+    }
+    function cancel(){
+      clearTimeout(timer);
+      timer = null;
+      targetEl = null;
+    }
+    try {
+      root.addEventListener('touchstart', start, {passive: true});
+      root.addEventListener('touchend', cancel);
+      root.addEventListener('touchmove', cancel);
+      root.addEventListener('touchcancel', cancel);
+    } catch(_) { /* non-touch env */ }
+  }
+
+  // Join room on double-click in rooms list; long-press on mobile
   (function(){
     const panel = document.getElementById('roomsListPanel');
     if(panel){
@@ -276,10 +426,15 @@
         const room = item.dataset.room || (item.querySelector('.meta') ? item.querySelector('.meta').textContent.trim() : '');
         if(room){ enterRoom(room); }
       });
+      // Long-press to enter room on touch devices
+      addLongPress(panel, '.room-item', function(item){
+        const room = item.dataset.room || (item.querySelector('.meta') ? item.querySelector('.meta').textContent.trim() : '');
+        if(room){ enterRoom(room); }
+      });
     }
   })();
 
-  // Open private on double-click in users list (Connectés)
+  // Open private on double-click in users list (Connectés); long-press on mobile
   (function(){
     const panel = document.getElementById('usersListPanel');
     if(panel){
@@ -294,11 +449,21 @@
           debugLog('Conversation privée avec vous‑même non autorisée.\n');
         }
       });
+      // Long-press to open private on touch devices
+      addLongPress(panel, '.msg', function(item){
+        const user = (item.textContent || '').trim();
+        if(user && !isSelf(user)){
+          const {panel: privPanel} = ensurePrivateTab(user);
+          activateTabByTarget(privPanel.id);
+        } else if (user && isSelf(user)) {
+          debugLog('Conversation privée avec vous‑même non autorisée.\n');
+        }
+      });
     }
   })();
 
   // Open private on double-click in current room sidebar users list
-  // Single-click to prefill room composer with "pseudo >"
+  // Single-click to prefill room composer with "pseudo >"; long-press to open private on touch
   (function(){
     const panel = document.getElementById('currentRoomUsers');
     if(panel){
@@ -325,29 +490,70 @@
           debugLog('Conversation privée avec vous‑même non autorisée.\n');
         }
       });
+      // Long-press to open private on touch devices
+      addLongPress(panel, '.msg', function(item){
+        const user = (item.textContent || '').trim();
+        if(user && !isSelf(user)){
+          const {panel: privPanel} = ensurePrivateTab(user);
+          activateTabByTarget(privPanel.id);
+        } else if (user && isSelf(user)) {
+          debugLog('Conversation privée avec vous‑même non autorisée.\n');
+        }
+      });
     }
   })();
 
   // Click on a message in current room to prefill composer with "pseudo >"
+  // Double-click a message to open a private chat with that user; also supports [JOIN] lines; long-press on touch devices does the same
   (function(){
     const panel = document.getElementById('currentRoomMessages');
     if(panel){
+      function parseAuthorFromMsgEl(el){
+        const text = (el && el.textContent || '').trim();
+        if(!text) return null;
+        if(text[0] === '[') return null; // skip system/join/quit lines for single-click prefill
+        const idx = text.indexOf(' > ');
+        if(idx <= 0) return null;
+        return text.substring(0, idx).trim();
+      }
+      function parseJoinUserFromMsgEl(el){
+        const text = (el && el.textContent || '').trim();
+        if(!text || text.indexOf('[JOIN] ') !== 0) return null; // expected: [JOIN] USER a rejoint ROOM
+        const rest = text.substring(7);
+        const idx = rest.indexOf(' a rejoint');
+        if(idx <= 0) return null;
+        return rest.substring(0, idx).trim();
+      }
       panel.addEventListener('click', function(e){
         const item = e.target.closest('.msg');
         if(!item || !panel.contains(item)) return;
-        const text = (item.textContent || '').trim();
-        if(!text) return;
-        if(text[0] === '[') return; // skip system/join/quit lines
-        const idx = text.indexOf(' : ');
-        if(idx <= 0) return;
-        const user = text.substring(0, idx).trim();
-        if(!user) return;
+        const user = parseAuthorFromMsgEl(item);
+        if(!user) return; // do not prefill on system lines like [JOIN]/[QUIT]
         if (isSelf(user)) return; // prevent selecting own pseudo
         const input = document.getElementById('roomInput');
         if(input){
           input.value = user + ' > ';
           try { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; } catch(_){}
         }
+      });
+      panel.addEventListener('dblclick', function(e){
+        const item = e.target.closest('.msg');
+        if(!item || !panel.contains(item)) return;
+        let user = parseAuthorFromMsgEl(item);
+        if(!user){ user = parseJoinUserFromMsgEl(item); }
+        if(!user) return;
+        if (isSelf(user)) { debugLog('Conversation privée avec vous‑même non autorisée.\n'); return; }
+        const {panel: privPanel} = ensurePrivateTab(user);
+        activateTabByTarget(privPanel.id);
+      });
+      // Touch long-press to open private as a mobile alternative to double-click
+      addLongPress(panel, '.msg', function(item){
+        let user = parseAuthorFromMsgEl(item);
+        if(!user){ user = parseJoinUserFromMsgEl(item); }
+        if(!user) return;
+        if (isSelf(user)) { debugLog('Conversation privée avec vous‑même non autorisée.\n'); return; }
+        const {panel: privPanel} = ensurePrivateTab(user);
+        activateTabByTarget(privPanel.id);
       });
     }
   })();
@@ -370,10 +576,25 @@
       return;
     }
     const list = Array.from(currentRoomUsers).sort();
-    box.innerHTML = list.map(u=>'<div class="msg">'+u+'</div>').join('');
+    box.innerHTML = list.map(u=>'<div class="msg' + (isSelf(u) ? ' self' : '') + '">' + u + '</div>').join('');
   }
 
   const privateTabs = new Map(); // user -> {tab, panel}
+  const privateHistory = new Map(); // user -> [{text, bold}]
+  function closePrivateUI(user, opts){
+    try {
+      const entry = privateTabs.get(user);
+      if(!entry) return;
+      if (entry.tab && entry.tab.parentNode) entry.tab.parentNode.removeChild(entry.tab);
+      if (entry.panel && entry.panel.parentNode) entry.panel.parentNode.removeChild(entry.panel);
+      privateTabs.delete(user);
+      // Default behavior: go back to current room unless caller overrides
+      const after = opts && opts.after ? opts.after : 'current';
+      if (after === 'current') {
+        activateTabByTarget('panel-current');
+      } // when after === 'none', do nothing here; caller will decide
+    } catch(_){}
+  }
   function ensurePrivateTab(user){
     if(privateTabs.has(user)) return privateTabs.get(user);
     const tabs = document.getElementById('tabs');
@@ -391,18 +612,46 @@
     panel.id = panelId;
     panel.innerHTML = '<div class="messages" id="messages-private-' + user + '"></div>'+
       '<div class="composer">\n' +
-      '  <input type="text" placeholder="Message privé à ' + user + '..." onkeypress="if(event.key===\'Enter\'){ writePrivate(this.value,\'' + user + '\'); this.value=\'\'; }">\n' +
-      '  <input type="button" value="Envoyer" onclick="(function(el){ writePrivate(el.previousElementSibling.value,\'' + user + '\'); el.previousElementSibling.value=\'\'; })(this)">\n' +
+      '  <textarea rows="2" placeholder="Message privé à ' + user + '..." oninput="autosizeTextarea(this)" onkeydown="if(event.key===\'Enter\' && !event.shiftKey){ event.preventDefault(); sendFromComposer(this,\'private\', \'' + user + '\'); }"></textarea>\n' +
+      '  <button class="send-btn" title="Envoyer" onclick="sendFromComposer(this.previousElementSibling,\'private\', \'' + user + '\')">-&gt;</button>\n' +
       '</div>';
     document.querySelector('.panels').appendChild(panel);
+
+    // Transform private composer to single-line input
+    try {
+      const ta = panel.querySelector('textarea');
+      if (ta) {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = ta.getAttribute('placeholder') || '';
+        inp.addEventListener('keydown', function(event){ if(event.key==='Enter'){ event.preventDefault(); sendFromComposer(inp,'private', user); } });
+        ta.parentNode.replaceChild(inp, ta);
+      }
+    } catch(_){}
+
+    // Restore history if any
+    try {
+      const hist = privateHistory.get(user);
+      if (Array.isArray(hist) && hist.length) {
+        const box = document.getElementById('messages-private-' + user);
+        if (box) {
+          hist.forEach(m => {
+            const d = document.createElement('div');
+            d.className = 'msg';
+            d.textContent = m.text;
+            if (m.bold) d.style.fontWeight = '700';
+            box.appendChild(d);
+          });
+          // Scroll to bottom after restoration
+          box.scrollTop = box.scrollHeight;
+        }
+      }
+    } catch(_){}
 
     // Close handling
     tab.querySelector('.close').addEventListener('click', function(ev){
       ev.stopPropagation();
-      tab.remove();
-      panel.remove();
-      privateTabs.delete(user);
-      activateTabByTarget('panel-current');
+      closePrivateUI(user);
     });
 
     const entry = {tab, panel};
@@ -413,9 +662,10 @@
   function appendMessage(containerId, text, opts){
     const box = document.getElementById(containerId);
     if(!box) return;
-    // Determine if user is near the bottom before appending
+    // Determine if user is near the bottom before appending (except Debug which always autoscrolls)
     const threshold = 8; // px
-    const isNearBottom = (box.scrollTop + box.clientHeight) >= (box.scrollHeight - threshold);
+    const forceAuto = (containerId === 'debugMessages');
+    const isNearBottom = forceAuto || ((box.scrollTop + box.clientHeight) >= (box.scrollHeight - threshold));
     const div = document.createElement('div');
     div.className = 'msg';
     div.textContent = text;
@@ -423,8 +673,19 @@
       div.style.fontWeight = '700';
     }
     box.appendChild(div);
-    // Auto-scroll only if user wasn't reading older messages
-    if (isNearBottom) {
+
+    // Record history for private conversations
+    try {
+      if (typeof containerId === 'string' && containerId.indexOf('messages-private-') === 0){
+        const user = containerId.substring('messages-private-'.length);
+        const arr = privateHistory.get(user) || [];
+        arr.push({text: text, bold: !!(opts && opts.bold)});
+        privateHistory.set(user, arr);
+      }
+    } catch(_){}
+
+    // Auto-scroll: always for Infos/Debug; else only if user wasn't reading older messages
+    if (forceAuto || isNearBottom) {
       box.scrollTop = box.scrollHeight;
     }
   }
@@ -436,19 +697,14 @@
     debugLog('get Time Ping sent...\n');
   },30000);
 
-  // Keep the debug textarea scrolled to bottom automatically
-  function scrollDebugBottom(){
-    const el = document.getElementById('debug');
-    if(el) el.scrollTop = el.scrollHeight;
-  }
-  setInterval(scrollDebugBottom, 300);
-
   function debugLog(text){
-    const el = document.getElementById('debug');
-    if(el){
-      el.value += text;
-      scrollDebugBottom();
-    }
+    try {
+      const lines = String(text).split('\n');
+      lines.forEach(function(line){
+        const t = (line || '').replace(/\r/g,'').trimEnd();
+        if (t) appendMessage('debugMessages', t);
+      });
+    } catch(_) { /* noop */ }
     notifyTab('panel-infos');
   }
 
@@ -531,6 +787,7 @@
             currentLogin = json.login;
             document.title = json.login;
             revealGatedUI();
+            try { var c = document.querySelector('.controls'); if (c) c.style.display = 'none'; } catch(_){}
             enterRoom('general');
           } else {
             debugLog('Authentication failed : ' + json.reason + '\n');
@@ -548,6 +805,8 @@
             setCurrentRoomName(json.name);
             // Clear previous room messages when entering a new room
             try { const box = document.getElementById('currentRoomMessages'); if (box) box.innerHTML = ''; } catch(_) {}
+            // Clear the room composer input when entering a room
+            try { const ri = document.getElementById('roomInput'); if (ri) ri.value = ''; } catch(_) {}
             currentRoomUsers = new Set();
             renderCurrentRoomUsers();
             appendMessage('currentRoomMessages', 'Entrée dans le salon: ' + json.name);
@@ -563,14 +822,17 @@
           const from = json.from || '?';
           const payload = json.payload || '';
           const highlight = (from === currentLogin) || (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0);
-          appendMessage('currentRoomMessages', from + ' : ' + payload, {bold: !!highlight});
-          activateTabByTarget('panel-current');
+          appendMessage('currentRoomMessages', from + ' > ' + payload, {bold: !!highlight});
+          // If someone addresses us in the room, notify the Current Room tab (no auto-switch)
+          if (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0) {
+            notifyTab('panel-current');
+          }
         }
 
         if (json.type === 'messagePrivate'){
           const from = json.from || 'inconnu';
           const {panel} = ensurePrivateTab(from);
-          appendMessage('messages-private-' + from, (json.from||'?') + ' : ' + json.payload);
+          appendMessage('messages-private-' + from, (json.from||'?') + ' > ' + json.payload);
           // Do not auto-switch on incoming private messages; just notify the tab
           notifyTab(panel.id);
         }
@@ -595,7 +857,7 @@
             const title = 'Utilisateurs dans le salon (' + (json.room||'?') + ')';
             let html = '<div class="small muted">' + title + '</div>';
             if (Array.isArray(list)) {
-              html += list.map(u => '<div class="msg">' + u + '</div>').join('');
+              html += list.map(u => '<div class="msg' + (u===currentLogin ? ' self' : '') + '">' + u + '</div>').join('');
             } else {
               html += '<div class="msg">' + (list ?? '') + '</div>';
             }
@@ -614,7 +876,7 @@
             const title = 'Utilisateurs connectés';
             let html = '<div class="small muted">' + title + '</div>';
             if (Array.isArray(list)) {
-              html += list.map(u => '<div class="msg">' + u + '</div>').join('');
+              html += list.map(u => '<div class="msg' + (u===currentLogin ? ' self' : '') + '">' + u + '</div>').join('');
             } else {
               html += '<div class="msg">' + (list ?? '') + '</div>';
             }
