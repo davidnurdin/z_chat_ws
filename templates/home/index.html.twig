@@ -4,220 +4,618 @@
 
 {% block body %}
 <style>
-    .example-wrapper { margin: 1em auto; max-width: 800px; width: 95%; font: 18px/1.5 sans-serif; }
-    .example-wrapper code { background: #F5F5F5; padding: 2px 6px; }
+  /* Full-viewport app layout */
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  .chat-wrapper {
+    margin: 0; max-width: none; width: 100vw; height: calc(100vh - var(--sf-toolbar-height, 0px));
+    display: flex; flex-direction: column;
+  }
+  .controls { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; padding: .5rem; }
+  .controls input[type=text] { padding: .4rem .6rem; border: 1px solid #ccc; border-radius: 6px; }
+  .controls input[type=button] { padding: .45rem .7rem; border: 1px solid #bbb; background: #f8f8f8; border-radius: 6px; cursor: pointer; }
+  .controls input[type=button]:hover { background: #efefef; }
+
+  /* Tabs */
+  .tabs { border-bottom: 1px solid #ddd; display: flex; gap: 4px; overflow-x: auto; padding: .25rem .5rem; }
+  .tab { appearance: none; background: #f2f2f2; border: 1px solid #ddd; border-bottom: none; border-top-left-radius: 8px; border-top-right-radius: 8px; padding: .5rem .75rem; cursor: pointer; }
+  .tab.active { background: white; border-color: #ccc; font-weight: 600; }
+  .tab.closeable { position: relative; padding-right: 1.6rem; }
+  .tab .close { position: absolute; right: .4rem; top: .25rem; color: #888; cursor: pointer; font-weight: 700; }
+  /* Flashing attention state for tabs */
+  .tab.notify { animation: tab-flash 1.2s ease-in-out infinite; border-color: #eab308; }
+  @keyframes tab-flash { 0% { background: #fff59d; } 50% { background: #ffec82; } 100% { background: #fff59d; } }
+
+  /* Panels container fills remaining space */
+  .panels { border: 1px solid #ccc; border-radius: 0 8px 8px 8px; background: white; padding: .5rem; flex: 1; min-height: 0; display: flex; }
+  .panel { display: none; width: 100%; height: 100%; }
+  .panel.active { display: block; }
+  .gated { display: none !important; }
+
+  /* Current room layout (fills height) */
+  #panel-current.panel.active { display: flex; flex-direction: column; }
+  .current-room { display: flex; gap: .75rem; flex: 1; min-height: 0; }
+  .current-room .left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .current-room .right { width: 240px; border-left: 1px solid #eee; padding-left: .5rem; display: flex; flex-direction: column; min-height: 0; }
+  .current-room .right .users { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: .5rem; background: #fafafa; }
+  .current-room .title { font-weight: 600; margin-bottom: .25rem; }
+
+  /* Rooms layout (fills height) */
+  #panel-rooms.panel.active { display: flex; flex-direction: column; }
+  .rooms-layout { display: flex; gap: .75rem; flex: 1; min-height: 0; }
+  .rooms-layout .left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .rooms-layout .right { width: 260px; border-left: 1px solid #eee; padding-left: .5rem; display: flex; flex-direction: column; }
+  .rooms-layout .right .box { border: 1px solid #eee; border-radius: 6px; padding: .5rem; background: #fafafa; }
+
+  /* Users panel full height */
+  #panel-users.panel.active { display: flex; flex-direction: column; }
+
+  /* Private panels full height */
+  .panel[id^="panel-private-"].panel.active { display: flex; flex-direction: column; }
+
+  /* Make rooms clickable */
+  #roomsListPanel .room-item { cursor: pointer; }
+
+  .messages { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: .5rem; background: #fafafa; }
+  .msg { margin: .25rem 0; }
+  .msg .meta { color: #666; font-size: .85em; }
+
+  .composer { display: flex; gap: .5rem; margin-top: .5rem; }
+  .composer input[type=text] { flex: 1; }
+
+  .muted { color: #6b7280; }
+  .small { font-size: .85em; }
+
+  /* Debug panel full height */
+  #panel-infos.panel.active { display: flex; flex-direction: column; }
+  .debug { width: 100%; flex: 1; min-height: 0; }
 </style>
 
-<div class="example-wrapper">
-
+<div class="chat-wrapper">
+  <div class="controls">
+    <input type="text" id="login" value="user1" placeholder="login" />
     <input type="button" id="btn1" value="Authenticate" onclick="authenticate()">
-    <input type="button" id="btn2" value="Enter Room" onclick="enterRoom(document.getElementById('goroom').value)">
-    <input type="button" id="btn3" value="Write COUCOU to ROOM" onclick="writeRoom('coucou')">
-    <input type="button" id="btn4" value="get ROOMS list" onclick="getRoomsList()">
-    <input type="button" id="btn5" value="Write COUCOU to user1" onclick="writePrivate('coucou','user1')">
-    <input type="button" id="btn6" value="List ALL USERS by type" onclick="listAllUsersByType('standardUser')">
+  </div>
 
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-target="panel-infos">Infos</button>
+    <button class="tab gated" data-target="panel-users">Connectés</button>
+    <button class="tab gated" data-target="panel-rooms">Salons</button>
+    <button class="tab gated" data-target="panel-current" id="tab-current-room">Salon : -</button>
+    <!-- Private tabs will be appended here -->
+  </div>
+  <div class="panels">
+    <div class="panel gated" id="panel-users">
+      <div id="usersListPanel" class="messages"></div>
+    </div>
 
-    <br>
-    <input type="text" id="login" value="user1" />
-    <input type="text" id="goroom" value="general" />
-    <textarea id="debug" cols="130" rows="10"></textarea>
+    <div class="panel gated" id="panel-rooms">
+      <div class="rooms-layout">
+        <div class="left">
+          <div class="small muted">Liste des salons</div>
+          <div id="roomsListPanel" class="messages"></div>
+        </div>
+        <div class="right">
+          <div class="small muted">Créer un salon</div>
+          <div class="box">
+            <input type="text" id="createRoomName" placeholder="Nom du salon" onkeypress="if(event.key==='Enter'){ const v=this.value.trim(); if(v){ enterRoom(v); this.value=''; }}" />
+            <input type="button" value="Créer" onclick="(function(){ const el=document.getElementById('createRoomName'); const v=(el.value||'').trim(); if(v){ enterRoom(v); el.value=''; } })()">
+            <div class="small muted" style="margin-top:.5rem;">Astuce: créer = entrer dans un salon nouveau.</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <textarea id="listUser" cols="130" rows="10"></textarea>
-    <textarea id="room" cols="130" rows="10"></textarea>
-    <textarea id="roomsList" cols="130" rows="10"></textarea>
-    <textarea id="private" cols="130" rows="10"></textarea>
+    <div class="panel gated" id="panel-current">
+      <div class="current-room">
+        <div class="left">
+          <div class="title small muted">Messages du salon</div>
+          <div class="messages" id="currentRoomMessages"></div>
+          <div class="composer">
+            <input type="text" id="roomInput" placeholder="Votre message au salon en cours..." onkeypress="if(event.key==='Enter'){ writeRoom(this.value); this.value=''; }" />
+            <input type="button" value="Envoyer" onclick="(function(){ const el=document.getElementById('roomInput'); writeRoom(el.value); el.value=''; })()">
+          </div>
+        </div>
+        <div class="right">
+          <div class="title small muted">Connectés au salon</div>
+          <div id="currentRoomUsers" class="users"></div>
+        </div>
+      </div>
+    </div>
 
+    <div class="panel active" id="panel-infos">
+      <div class="small muted">Informations / Debug</div>
+      <textarea id="debug" class="debug"></textarea>
+    </div>
 
+    <!-- Private panels will be appended here -->
+  </div>
+</div>
 
-    <script>
+<script>
+  // Account for Symfony debug toolbar height and prevent page scroll
+  (function initToolbarSizing(){
+    function recalcToolbarInset(){
+      try {
+        var h = 0;
+        var bs = getComputedStyle(document.body);
+        var pad = parseInt(bs.paddingBottom, 10) || 0;
+        var mar = parseInt(bs.marginBottom, 10) || 0;
+        h = Math.max(h, pad, mar);
+        var sf = document.querySelector('div[id^="sfwdt"]');
+        if (sf && sf.offsetHeight) h = Math.max(h, sf.offsetHeight);
+        document.documentElement.style.setProperty('--sf-toolbar-height', (h|0) + 'px');
+      } catch(_) { /* noop */ }
+    }
+    window.addEventListener('load', recalcToolbarInset);
+    window.addEventListener('resize', recalcToolbarInset);
+    // Observe DOM changes that might affect toolbar size/visibility
+    try {
+      var mo = new MutationObserver(recalcToolbarInset);
+      mo.observe(document.body, {attributes: true, childList: true, subtree: true});
+    } catch(_) { /* older browsers */ }
+    // Initial and short polling to catch first paint updates
+    recalcToolbarInset();
+    var ticks = 0; var iv = setInterval(function(){ recalcToolbarInset(); if(++ticks > 10) clearInterval(iv); }, 300);
+  })();
 
+  // Tab logic
+  function getTabButtonByTarget(targetId){
+    return Array.from(document.querySelectorAll('.tab')).find(t => t.dataset.target === targetId) || null;
+  }
+  function activateTabByTarget(targetId){
+    document.querySelectorAll('.tab').forEach(t=>{
+      const isActive = t.dataset.target===targetId;
+      t.classList.toggle('active', isActive);
+      if(isActive) t.classList.remove('notify');
+    });
+    document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id===targetId));
+    // Focus appropriate composer when a tab becomes active
+    try {
+      if (targetId === 'panel-current') {
+        const roomInput = document.getElementById('roomInput');
+        if (roomInput) { roomInput.focus(); roomInput.select && roomInput.select(); }
+      } else if (typeof targetId === 'string' && targetId.indexOf('panel-private-') === 0) {
+        const p = document.getElementById(targetId);
+        if (p) {
+          const input = p.querySelector('input[type="text"]');
+          if (input) { input.focus(); input.select && input.select(); }
+        }
+      }
+    } catch (_) { /* noop */ }
+  }
+  function notifyTab(targetId){
+    const btn = getTabButtonByTarget(targetId);
+    if(!btn) return;
+    const isActive = btn.classList.contains('active');
+    if(!isActive) btn.classList.add('notify');
+  }
+  document.getElementById('tabs').addEventListener('click', function(e){
+    const btn = e.target.closest('.tab');
+    if(!btn) return;
+    const target = btn.dataset.target;
+    if(target) {
+      activateTabByTarget(target);
+      // Auto-refresh when clicking certain tabs
+      if (target === 'panel-rooms'){
+        const panel = document.getElementById('roomsListPanel');
+        if(panel) panel.innerHTML = '';
+        getRoomsList();
+      } else if (target === 'panel-users'){
+        const panel = document.getElementById('usersListPanel');
+        if(panel) panel.innerHTML = '';
+        listAllUsersByType('standardUser');
+      }
+      // Focus the composer input when clicking a private tab
+      if (typeof target === 'string' && target.indexOf('panel-private-') === 0) {
+        const p = document.getElementById(target);
+        if (p) {
+          const input = p.querySelector('input[type="text"]');
+          if (input) { try { input.focus(); input.select(); } catch(_){} }
+        }
+      }
+    }
+  });
 
+  // Join room on double-click in rooms list
+  (function(){
+    const panel = document.getElementById('roomsListPanel');
+    if(panel){
+      panel.addEventListener('dblclick', function(e){
+        const item = e.target.closest('.room-item');
+        if(!item) return;
+        const room = item.dataset.room || (item.querySelector('.meta') ? item.querySelector('.meta').textContent.trim() : '');
+        if(room){ enterRoom(room); }
+      });
+    }
+  })();
 
-        setInterval(function(){
+  // Open private on double-click in users list (Connectés)
+  (function(){
+    const panel = document.getElementById('usersListPanel');
+    if(panel){
+      panel.addEventListener('dblclick', function(e){
+        const item = e.target.closest('.msg');
+        if(!item || !panel.contains(item)) return;
+        const user = (item.textContent || '').trim();
+        if(user && !isSelf(user)){
+          const {panel: privPanel} = ensurePrivateTab(user);
+          activateTabByTarget(privPanel.id);
+        } else if (user && isSelf(user)) {
+          debugLog('Conversation privée avec vous‑même non autorisée.\n');
+        }
+      });
+    }
+  })();
 
-            let trame = {'type': 'getTimePing'};
-            socket.send(JSON.stringify(trame));
-            document.getElementById('debug').value += "get Time Ping sent...\n";
-        },30000);
+  // Open private on double-click in current room sidebar users list
+  // Single-click to prefill room composer with "pseudo >"
+  (function(){
+    const panel = document.getElementById('currentRoomUsers');
+    if(panel){
+      panel.addEventListener('click', function(e){
+        const item = e.target.closest('.msg');
+        if(!item || !panel.contains(item)) return;
+        const user = (item.textContent || '').trim();
+        if(!user) return;
+        if (isSelf(user)) return; // prevent selecting own pseudo
+        const input = document.getElementById('roomInput');
+        if(input){
+          input.value = user + ' > ';
+          try { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; } catch(_){}
+        }
+      });
+      panel.addEventListener('dblclick', function(e){
+        const item = e.target.closest('.msg');
+        if(!item || !panel.contains(item)) return;
+        const user = (item.textContent || '').trim();
+        if(user && !isSelf(user)){
+          const {panel: privPanel} = ensurePrivateTab(user);
+          activateTabByTarget(privPanel.id);
+        } else if (user && isSelf(user)) {
+          debugLog('Conversation privée avec vous‑même non autorisée.\n');
+        }
+      });
+    }
+  })();
 
-        function listAllUsersByType(type)
-        {
-            let trame = {'type': 'listAllUsers', 'userType': type};
-            socket.send(JSON.stringify(trame));
-            document.getElementById('debug').value += "List all users sent...\n";
+  // Click on a message in current room to prefill composer with "pseudo >"
+  (function(){
+    const panel = document.getElementById('currentRoomMessages');
+    if(panel){
+      panel.addEventListener('click', function(e){
+        const item = e.target.closest('.msg');
+        if(!item || !panel.contains(item)) return;
+        const text = (item.textContent || '').trim();
+        if(!text) return;
+        if(text[0] === '[') return; // skip system/join/quit lines
+        const idx = text.indexOf(' : ');
+        if(idx <= 0) return;
+        const user = text.substring(0, idx).trim();
+        if(!user) return;
+        if (isSelf(user)) return; // prevent selecting own pseudo
+        const input = document.getElementById('roomInput');
+        if(input){
+          input.value = user + ' > ';
+          try { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; } catch(_){}
+        }
+      });
+    }
+  })();
 
+  // Current room state and helpers
+  let currentRoomName = null;
+  let currentRoomUsers = new Set();
+  let currentLogin = null;
+  function isSelf(user){ return !!currentLogin && user === currentLogin; }
+  function setCurrentRoomName(name){
+    currentRoomName = name || '-';
+    const tab = document.getElementById('tab-current-room');
+    if(tab){ tab.textContent = 'Salon : ' + currentRoomName; }
+  }
+  function renderCurrentRoomUsers(){
+    const box = document.getElementById('currentRoomUsers');
+    if(!box) return;
+    if(!currentRoomUsers || currentRoomUsers.size===0){
+      box.innerHTML = '<div class="muted small">Personne</div>';
+      return;
+    }
+    const list = Array.from(currentRoomUsers).sort();
+    box.innerHTML = list.map(u=>'<div class="msg">'+u+'</div>').join('');
+  }
+
+  const privateTabs = new Map(); // user -> {tab, panel}
+  function ensurePrivateTab(user){
+    if(privateTabs.has(user)) return privateTabs.get(user);
+    const tabs = document.getElementById('tabs');
+    const tab = document.createElement('button');
+    tab.className = 'tab closeable';
+    const panelId = 'panel-private-' + user;
+    tab.dataset.target = panelId;
+    tab.innerHTML = 'Privé: ' + user + ' <span class="close" title="Fermer">×</span>';
+
+    // Insert after existing tabs
+    tabs.appendChild(tab);
+
+    const panel = document.createElement('div');
+    panel.className = 'panel';
+    panel.id = panelId;
+    panel.innerHTML = '<div class="messages" id="messages-private-' + user + '"></div>'+
+      '<div class="composer">\n' +
+      '  <input type="text" placeholder="Message privé à ' + user + '..." onkeypress="if(event.key===\'Enter\'){ writePrivate(this.value,\'' + user + '\'); this.value=\'\'; }">\n' +
+      '  <input type="button" value="Envoyer" onclick="(function(el){ writePrivate(el.previousElementSibling.value,\'' + user + '\'); el.previousElementSibling.value=\'\'; })(this)">\n' +
+      '</div>';
+    document.querySelector('.panels').appendChild(panel);
+
+    // Close handling
+    tab.querySelector('.close').addEventListener('click', function(ev){
+      ev.stopPropagation();
+      tab.remove();
+      panel.remove();
+      privateTabs.delete(user);
+      activateTabByTarget('panel-current');
+    });
+
+    const entry = {tab, panel};
+    privateTabs.set(user, entry);
+    return entry;
+  }
+
+  function appendMessage(containerId, text, opts){
+    const box = document.getElementById(containerId);
+    if(!box) return;
+    // Determine if user is near the bottom before appending
+    const threshold = 8; // px
+    const isNearBottom = (box.scrollTop + box.clientHeight) >= (box.scrollHeight - threshold);
+    const div = document.createElement('div');
+    div.className = 'msg';
+    div.textContent = text;
+    if (opts && opts.bold) {
+      div.style.fontWeight = '700';
+    }
+    box.appendChild(div);
+    // Auto-scroll only if user wasn't reading older messages
+    if (isNearBottom) {
+      box.scrollTop = box.scrollHeight;
+    }
+  }
+
+  // Existing controls
+  setInterval(function(){
+    let trame = {'type': 'getTimePing'};
+    socket.send(JSON.stringify(trame));
+    debugLog('get Time Ping sent...\n');
+  },30000);
+
+  // Keep the debug textarea scrolled to bottom automatically
+  function scrollDebugBottom(){
+    const el = document.getElementById('debug');
+    if(el) el.scrollTop = el.scrollHeight;
+  }
+  setInterval(scrollDebugBottom, 300);
+
+  function debugLog(text){
+    const el = document.getElementById('debug');
+    if(el){
+      el.value += text;
+      scrollDebugBottom();
+    }
+    notifyTab('panel-infos');
+  }
+
+  function revealGatedUI(){
+    document.querySelectorAll('.gated').forEach(el => el.classList.remove('gated'));
+  }
+
+  function listAllUsersByType(type){
+    let trame = {'type': 'listAllUsers', 'userType': type};
+    socket.send(JSON.stringify(trame));
+    debugLog('List all users sent...\n');
+    // Show users tab when requesting list
+    const panel = document.getElementById('usersListPanel');
+    if(panel) panel.innerHTML = '';
+    activateTabByTarget('panel-users');
+  }
+
+  function getRoomsList(){
+    let trame = {'type': 'listRoom'};
+    socket.send(JSON.stringify(trame));
+    debugLog('Get rooms list sent...\n');
+  }
+
+  function writePrivate(message,to){
+    if(!message) return;
+    if(isSelf(to)){
+      debugLog('Impossible d\'envoyer un message privé à vous‑même.\n');
+      return;
+    }
+    let trame = {'type': 'writePrivate', 'message': message, 'to': to};
+    socket.send(JSON.stringify(trame));
+    debugLog('PM -> ' + to + ': ' + message + '\n');
+    const {panel} = ensurePrivateTab(to);
+    appendMessage('messages-private-' + to, 'Moi : ' + message);
+    activateTabByTarget(panel.id);
+  }
+
+  function writeRoom(message){
+    if(!message) return;
+    let trame = {'type': 'writeRoom', 'message': message};
+    socket.send(JSON.stringify(trame));
+    debugLog('Room -> ' + message + '\n');
+  }
+
+  function enterRoom(room){
+    let trame = {'type': 'enterRoom', 'name': room};
+    socket.send(JSON.stringify(trame));
+    debugLog('Enter room ' + room + ' sent...\n');
+  }
+
+  function authenticate(){
+    let trame = { 'type' : 'auth' , 'login' : document.getElementById('login').value , 'password' : 'pass' };
+    socket.send(JSON.stringify(trame));
+    debugLog('Authentication sent...\n');
+  }
+
+  // WebSocket connection
+  const socket = new WebSocket('wss://localhost/ws/chat');
+  socket.addEventListener('open', function(){
+    debugLog('WebSocket is connected...\n');
+    socket.addEventListener('close', function(){ console.log('WebSocket is closed...'); });
+  });
+
+  socket.addEventListener('message', function (event) {
+    let data = event.data;
+    if (data instanceof Blob) {
+      let reader = new FileReader();
+      reader.onload = function() {
+        let text = reader.result;
+        const json = JSON.parse(text);
+        console.log(json);
+
+        if (json.type === 'message'){
+          debugLog(json.payload + '\n');
         }
 
-        function getRoomsList()
-        {
-            // send from socket a packet to get rooms list in JSON
-            let trame = {'type': 'listRoom'};
-            socket.send(JSON.stringify(trame));
-            document.getElementById('debug').value += "Get rooms list sent...\n";
+        if (json.type === 'auth'){
+          if (json.status === 'ok'){
+            debugLog('Authentication successful\n');
+            currentLogin = json.login;
+            document.title = json.login;
+            revealGatedUI();
+            enterRoom('general');
+          } else {
+            debugLog('Authentication failed : ' + json.reason + '\n');
+          }
         }
 
-        function writePrivate(message,to)
-        {
-            let trame = {'type': 'writePrivate', 'message': message, 'to': to};
-            socket.send(JSON.stringify(trame));
-            document.getElementById('debug').value += "Message " + message + " sent to " + to + "...\n";
-
-        }
-        function writeRoom(message) {
-            // send from socket a packet to write in a room in JSON
-            let trame = {'type': 'writeRoom', 'message': message};
-            socket.send(JSON.stringify(trame));
-            document.getElementById('debug').value += "Message " + message + " sent...\n";
+        if (json.type === 'countAll'){
+          debugLog('Count all users : ' + json.count + '\n');
+          try { setUsersTabCount(json.count); } catch(_) {}
         }
 
-        function enterRoom(room) {
-            // send from socket a packet to enter in a room in JSON
-            let trame = {'type': 'enterRoom', 'name': room};
-            socket.send(JSON.stringify(trame));
-            document.getElementById('debug').value += "Enter room " + room + " sent...\n";
-
+        if (json.type === 'enterRoom'){
+          debugLog((json.status==='ok' ? 'Entered room successfully' : 'Failed to enter room') + '\n');
+          if(json.status==='ok' && json.name){
+            setCurrentRoomName(json.name);
+            currentRoomUsers = new Set();
+            renderCurrentRoomUsers();
+            appendMessage('currentRoomMessages', 'Entrée dans le salon: ' + json.name);
+            activateTabByTarget('panel-current');
+          }
         }
 
-
-        function authenticate() {
-            // send from socket a packet to auth in JSON
-            let trame = { 'type' : 'auth' , 'login' : document.getElementById('login').value , 'password' : 'pass' };
-            socket.send(JSON.stringify(trame));
-            document.getElementById('debug').value += "Authentication sent...\n";
-
-
+        if (json.type === 'writeRoom'){
+          debugLog((json.status==='ok' ? 'Message sent to room successfully' : 'Failed to send message to room') + '\n');
         }
-        // connect with wss on wss://localhost
-        const socket = new WebSocket('wss://localhost/ws/chat');
 
-        // Attach event handler to mark this client as alive when pinged.
+        if (json.type === 'messageRoom'){
+          const from = json.from || '?';
+          const payload = json.payload || '';
+          const highlight = (from === currentLogin) || (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0);
+          appendMessage('currentRoomMessages', from + ' : ' + payload, {bold: !!highlight});
+          activateTabByTarget('panel-current');
+        }
 
+        if (json.type === 'messagePrivate'){
+          const from = json.from || 'inconnu';
+          const {panel} = ensurePrivateTab(from);
+          appendMessage('messages-private-' + from, (json.from||'?') + ' : ' + json.payload);
+          // Do not auto-switch on incoming private messages; just notify the tab
+          notifyTab(panel.id);
+        }
 
-        // view pong on websocket
-        socket.addEventListener('open', function (ws_client_stream) {
-            // socket.send('Hello Server!');
-            document.getElementById('debug').value += "WebSocket is connected...\n";
-
-            socket.addEventListener('close', function() {
-                console.log('WebSocket is closed...');
-            });
-
-
-
-        });
-        socket.addEventListener('message', function (event) {
-
-            let data = event.data;
-            if (data instanceof Blob) {
-                let reader = new FileReader();
-                reader.onload = function() {
-                    let text = reader.result;
-                    json = JSON.parse(text);
-
-                    console.log(json);
-
-                    if (json.type == 'message')
-                    {
-                        document.getElementById('debug').value += json.payload + "\n" ;
-                    }
-
-                    if (json.type == 'auth')
-                    {
-                        if (json.status == 'ok')
-                        {
-                            document.getElementById('debug').value += "Authentication successful\n";
-                            // send a message to the server
-                            document.title = json.login ;
-                        }
-                        else
-                        {
-                            document.getElementById('debug').value += "Authentication failed : " + json.reason + "\n";
-                        }
-                    }
-
-                    if (json.type == 'countAll')
-                    {
-                        document.getElementById('debug').value += "Count all users : " + json.count + "\n";
-                    }
-
-                    if (json.type == 'enterRoom')
-                    {
-                        if (json.status == 'ok')
-                        {
-                            document.getElementById('debug').value += "Entered room successfully\n";
-                        }
-                        else
-                        {
-                            document.getElementById('debug').value += "Failed to enter room\n";
-                        }
-                    }
-
-                    if (json.type == 'writeRoom')
-                    {
-                        if (json.status == 'ok')
-                        {
-                            document.getElementById('debug').value += "Message sent to room successfully\n";
-                        }
-                        else
-                        {
-                            document.getElementById('debug').value += "Failed to send message to room\n";
-                        }
-                    }
-
-                    if (json.type == 'messageRoom')
-                    {
-                        document.getElementById('room').value += "Room " + json.name + " from " + json.from + " : " + json.payload + "\n";
-                    }
-
-                    if (json.type == 'messagePrivate')
-                    {
-                        document.getElementById('private').value += "Private message from " + json.from + " : " + json.payload + "\n";
-                    }
-
-                    if (json.type == 'listUserInRoom')
-                    {
-                        //console.log(json);
-                        document.getElementById('listUser').value += "List of room (" + json.room + ") : " + json.list + "\n";
-                    }
-
-                    if (json.type == 'listAllUsers')
-                    {
-                        document.getElementById('listUser').value += "List of all users : " + json.list + "\n";
-                    }
-                    if (json.type == 'userInRoom')
-                    {
-                        document.getElementById('listUser').value += "IN ROOM : " + json.room + " => " + json.user + "\n";
-                    }
-
-                    if (json.type == 'userOutRoom')
-                    {
-                        document.getElementById('listUser').value += "OUT ROOM : " + json.room + " => " + json.user + "\n";
-                    }
-
-                    if (json.type == 'roomsList')
-                    {
-                        try {
-                            const rooms = json.rooms || {};
-                            const entries = Object.entries(rooms);
-                            const text = entries.length
-                                ? entries.map(([name, count]) => name + " (" + count + ")").join(", ")
-                                : "none";
-                            document.getElementById('roomsList').value = "Rooms list: " + text + "\n";
-                        } catch (e) {
-                            document.getElementById('roomsList').value = "Rooms list: [invalid payload]\n";
-                        }
-                    }
-
-
-                };
-                reader.readAsText(data);
-                return;
+        if (json.type === 'listUserInRoom'){
+          try {
+            const list = json.list;
+            // Update current room sidebar if the payload matches current room
+            if (json.room && json.room === currentRoomName) {
+              if (Array.isArray(list)) {
+                currentRoomUsers = new Set(list);
+              } else if (typeof list === 'string') {
+                currentRoomUsers = new Set(list.split(',').map(s=>s.trim()).filter(Boolean));
+              } else {
+                currentRoomUsers = new Set();
+              }
+              renderCurrentRoomUsers();
             }
 
-        });
+            // Also show in the Users tab as before
+            const panel = document.getElementById('usersListPanel');
+            const title = 'Utilisateurs dans le salon (' + (json.room||'?') + ')';
+            let html = '<div class="small muted">' + title + '</div>';
+            if (Array.isArray(list)) {
+              html += list.map(u => '<div class="msg">' + u + '</div>').join('');
+            } else {
+              html += '<div class="msg">' + (list ?? '') + '</div>';
+            }
+            panel.innerHTML = html;
+            // Do not auto-switch to the Users tab here; keep focus on the current room.
+          } catch(e) {
+            // fallback to debug
+            debugLog('Users in room: ' + json.list + '\n');
+          }
+        }
 
+        if (json.type === 'listAllUsers'){
+          try {
+            const panel = document.getElementById('usersListPanel');
+            const list = json.list;
+            const title = 'Utilisateurs connectés';
+            let html = '<div class="small muted">' + title + '</div>';
+            if (Array.isArray(list)) {
+              html += list.map(u => '<div class="msg">' + u + '</div>').join('');
+            } else {
+              html += '<div class="msg">' + (list ?? '') + '</div>';
+            }
+            panel.innerHTML = html;
+            activateTabByTarget('panel-users');
+          } catch(e) {
+            debugLog('List of all users: ' + json.list + '\n');
+          }
+        }
 
-    </script>
-</div>
+        if (json.type === 'userInRoom'){
+          appendMessage('currentRoomMessages', '[JOIN] ' + json.user + ' a rejoint ' + json.room);
+          if (json.room && json.room === currentRoomName && json.user){
+            currentRoomUsers.add(json.user);
+            renderCurrentRoomUsers();
+          }
+        }
+
+        if (json.type === 'userOutRoom'){
+          appendMessage('currentRoomMessages', '[QUIT] ' + json.user + ' a quitté ' + json.room);
+          if (json.room && json.room === currentRoomName && json.user){
+            currentRoomUsers.delete(json.user);
+            renderCurrentRoomUsers();
+          }
+        }
+
+        if (json.type === 'roomsList'){
+          try {
+            const rooms = json.rooms || {};
+            const entries = Object.entries(rooms);
+            const html = entries.length
+              ? entries.map(([name, count]) => '<div class="msg room-item" data-room="' + name + '"><span class="meta">' + name + '</span> (' + count + ')</div>').join('')
+              : '<div class="muted small">Aucun salon</div>';
+            document.getElementById('roomsListPanel').innerHTML = html;
+            activateTabByTarget('panel-rooms');
+          } catch (e) {
+            document.getElementById('roomsListPanel').innerHTML = '<div class="muted small">Rooms list: [invalid payload]</div>';
+          }
+        }
+      };
+      reader.readAsText(data);
+    }
+  });
+  function setUsersTabCount(count){
+    const btn = getTabButtonByTarget('panel-users');
+    if(!btn) return;
+    const base = 'Connectés';
+    if(typeof count === 'number' && isFinite(count)){
+      btn.textContent = base + ' (' + count + ')';
+    } else {
+      btn.textContent = base;
+    }
+  }
+</script>
 {% endblock %}

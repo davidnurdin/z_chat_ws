@@ -49,7 +49,6 @@ $handler = static function (array $event): array  {
 
     if ($event['Type'] == 'open')
     {
-        file_put_contents('php://stderr', "New connection opened: " . $event['Connection'] . "\n");
         sendToClient($event['Connection'], ['type' => 'message', 'payload' => 'Welcome! Your connection ID is ' . $event['Connection']]);
         sendToAll( ['type' => 'countAll', 'count' => frankenphp_ws_getClientsCount()],$event['Connection']) ;
         frankenphp_ws_enablePing($event['Connection']);
@@ -85,7 +84,6 @@ $handler = static function (array $event): array  {
 
         if ($data['type'] == 'auth')
         {
-            file_put_contents('php://stderr', var_export($data,true) . "\n");
 
             if ($data['login'] == "ban")
             {
@@ -176,19 +174,12 @@ $handler = static function (array $event): array  {
         if ($data['type'] == 'writePrivate')
         {
             $clientTo = frankenphp_ws_searchStoredInformation('login',FRANKENPHP_WS_OP_EQ,$data['to']);
-            file_put_contents('php://stderr', var_export($clientTo,true) . "\n");
 
             if (count($clientTo) > 0)
             {
                 // Send private
                 sendToClient($clientTo[0],['type' => 'messagePrivate', 'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login') ,  'payload' => $data['message']]);
             }
-
-            // TODO
-            // Soit on gère coté serveur via login<>ConnectionId
-            // Soit on envois les ConnectionId des users dans la room (et autre)
-            // Soit on expose une api pour recup les connectionID ?
-            // IDK.
 
         }
 
@@ -202,23 +193,14 @@ $handler = static function (array $event): array  {
     if ($event['Type'] == 'beforeClose')
     {
 
-        file_put_contents('php://stderr', "Connection before closed: " . $event['Connection'] . "\n");
 
-        file_put_contents('php://stderr', var_export($event,true) . "\n");
 
-        // si on a un currentRoom on le vide et informe les users
         $currentRoom = frankenphp_ws_getStoredInformation($event['Connection'],'currentRoom'); // debug todo : voir si on a tjr les info ici
-        file_put_contents('php://stderr', "CURRENT ROOM : " . $currentRoom. "\n");
-
         $currentUser = frankenphp_ws_getStoredInformation($event['Connection'],'login');
 
-        file_put_contents('php://stderr', "CURRENT USER : " . $currentUser. "\n");
         if ($currentRoom != '')
         {
-            // BUG : si on lance, 3 bouton , f5 , (close) => relaunch => tt planté
             frankenphp_ws_setStoredInformation($event['Connection'],'currentRoom','');
-//            file_put_contents('php://stderr', "SEND TO ROOM_" . $currentRoom. " that user : " . $currentUser. " exit ! \n");
-
             sendToTag('room_' . $currentRoom, ['type' => 'userOutRoom', 'room' => $currentRoom , 'user' => $currentUser],$event['Connection']);
         }
 
@@ -227,7 +209,6 @@ $handler = static function (array $event): array  {
 
     if ($event['Type'] == 'close')
     {
-        file_put_contents('php://stderr', "Connection closed: " . $event['Connection'] . "\n");
         sendToAll( ['type' => 'countAll', 'count' => frankenphp_ws_getClientsCount()],$event['Connection']) ;
 
     }
