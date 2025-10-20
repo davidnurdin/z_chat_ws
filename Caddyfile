@@ -12,7 +12,7 @@
 	websocket {
 		address 127.0.0.1:5001 # Optional
 		worker ./public/websocket-worker.php # Optional
-		min_threads 5 # Optional, defaults to runtime.NumCPU()
+		min_threads 16 # Optional, defaults to runtime.NumCPU()
 	}
 }
 

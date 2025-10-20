@@ -291,6 +291,7 @@ $handler = static function (array $event): array  {
     return ['ok' => true];
 };
 
+$_SERVER['MAX_REQUESTS'] = 0 ;
 $maxRequests = (int)($_SERVER['MAX_REQUESTS'] ?? 0); // illimité si 0
 for ($nbRequests = 0; !$maxRequests || $nbRequests < $maxRequests; ++$nbRequests) {
     $keepRunning = \frankenphp_handle_request($handler);
