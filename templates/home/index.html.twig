@@ -60,6 +60,11 @@
   .messages { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: .5rem; background: #fafafa; }
   .msg { margin: .25rem 0; padding: .2rem .35rem; border-radius: 4px; transition: background-color .15s ease, color .15s ease; }
   .msg:hover { background: #f0f2f5; }
+  /* Contextual hover colors */
+  .msg.system:hover { background: #fee2e2; } /* light red for system */
+  .msg.g-m:hover { background: #dbeafe; } /* light blue for Homme */
+  .msg.g-f:hover { background: #fde2f2; } /* light pink for Femme */
+  .msg.g-x:hover { background: #f7f7d1; } /* light yellow/green for Autre */
   .msg.self { font-weight: 700; }
   .msg.system { color: #b91c1c; font-weight: 700; }
   .msg .meta { color: #666; font-size: .85em; }
@@ -72,6 +77,8 @@
   .user-tag.m { color: #2563eb; }
   .user-tag.f { color: #ec4899; }
   .user-tag.x { color: #a3a312; }
+  /* Rooms count style */
+  .room-count { color: #b91c1c; font-weight: 600; }
 
   .composer { --composer-h: 42px; display: flex; align-items: stretch; gap: .5rem; margin-top: .5rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: .4rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
   .composer textarea, .composer input[type=text] { flex: 1; border: none; outline: none; padding: 0 .65rem; border-radius: 8px; background: #f9fafb; resize: none; max-height: 140px; height: var(--composer-h); min-height: var(--composer-h); line-height: 1.3; }
@@ -582,6 +589,23 @@
     const cls = 'user-tag ' + genderCodeToClass(g);
     return '<span class="' + cls + '\">' + escapeHtml(user) + '</span>';
   }
+  // Sorting helpers: F first, then H, then X; alphabetical within each
+  function genderPriority(g){ return g === 'F' ? 0 : (g === 'H' ? 1 : 2); }
+  function getUserGender(user){ return userGenders.get(user) || (isSelf(user) ? currentGender : 'X'); }
+  function sortUsersByGenderThenName(a, b){
+    const ga = getUserGender(a); const gb = getUserGender(b);
+    const pa = genderPriority(ga); const pb = genderPriority(gb);
+    if (pa !== pb) return pa - pb;
+    return String(a).localeCompare(String(b), undefined, {sensitivity: 'base'});
+  }
+  function sortEntriesByGenderThenName(entries){
+    return entries.sort(function(e1, e2){
+      const p1 = genderPriority(e1 && e1.gender ? e1.gender : 'X');
+      const p2 = genderPriority(e2 && e2.gender ? e2.gender : 'X');
+      if (p1 !== p2) return p1 - p2;
+      return String(e1 && e1.login ? e1.login : '').localeCompare(String(e2 && e2.login ? e2.login : ''), undefined, {sensitivity:'base'});
+    });
+  }
   function setCurrentRoomName(name){
     currentRoomName = name || '-';
     updateCurrentRoomTabTitle();
@@ -604,8 +628,8 @@
       updateCurrentRoomTabTitle();
       return;
     }
-    const list = Array.from(currentRoomUsers).sort();
-    box.innerHTML = list.map(function(u){ return '<div class="msg' + (isSelf(u) ? ' self' : '') + '\">' + renderUserHTML(u) + '</div>'; }).join('');
+    const list = Array.from(currentRoomUsers).sort(sortUsersByGenderThenName);
+    box.innerHTML = list.map(function(u){ var g = getUserGender(u) || 'X'; var gcls = ' g-' + genderCodeToClass(g); return '<div class="msg' + (isSelf(u) ? ' self' : '') + gcls + '\">' + renderUserHTML(u) + '</div>'; }).join('');
     updateCurrentRoomTabTitle();
   }
 
@@ -707,10 +731,10 @@
     const forceAuto = (containerId === 'debugMessages');
     const isNearBottom = forceAuto || ((box.scrollTop + box.clientHeight) >= (box.scrollHeight - threshold));
     const div = document.createElement('div');
-    div.className = 'msg';
-    if (opts && opts.system) {
-      div.className += ' system';
-    }
+    let cls = 'msg';
+    if (opts && opts.system) { cls += ' system'; }
+    if (opts && opts.extraClass) { cls += ' ' + opts.extraClass; }
+    div.className = cls;
     if (opts && opts.html) {
       div.innerHTML = opts.html;
     } else {
@@ -785,7 +809,7 @@
     socket.send(JSON.stringify(trame));
     debugLog('PM -> ' + to + ': ' + message + '\n');
     const {panel} = ensurePrivateTab(to);
-    appendMessage('messages-private-' + to, currentLogin + ' > ' + message, {bold: true, html: renderUserHTML(currentLogin) + ' &gt; ' + escapeHtml(message)});
+    appendMessage('messages-private-' + to, currentLogin + ' > ' + message, {bold: true, html: renderUserHTML(currentLogin) + ' &gt; ' + escapeHtml(message), extraClass: ('g-' + genderCodeToClass(currentGender || 'X'))});
     activateTabByTarget(panel.id);
   }
 
@@ -877,7 +901,9 @@
           const payload = json.payload || '';
           const highlight = (from === currentLogin) || (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0);
           const html = renderUserHTML(from) + ' &gt; ' + escapeHtml(payload);
-          appendMessage('currentRoomMessages', from + ' > ' + payload, {bold: !!highlight, html});
+          const g = getUserGender(from) || 'X';
+          const extraClass = 'g-' + genderCodeToClass(g);
+          appendMessage('currentRoomMessages', from + ' > ' + payload, {bold: !!highlight, html, extraClass});
           // If someone addresses us in the room, notify the Current Room tab (no auto-switch)
           if (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0) {
             notifyTab('panel-current');
@@ -888,7 +914,9 @@
           const from = json.from || 'inconnu';
           const {panel} = ensurePrivateTab(from);
           const html = renderUserHTML(from) + ' &gt; ' + escapeHtml(json.payload || '');
-          appendMessage('messages-private-' + from, (json.from||'?') + ' > ' + (json.payload||''), {html});
+          const g = getUserGender(from) || 'X';
+          const extraClass = 'g-' + genderCodeToClass(g);
+          appendMessage('messages-private-' + from, (json.from||'?') + ' > ' + (json.payload||''), {html, extraClass});
           // Do not auto-switch on incoming private messages; just notify the tab
           notifyTab(panel.id);
         }
@@ -912,9 +940,12 @@
             // Update gender map
             entries.forEach(function(e){ if (e && e.login) userGenders.set(e.login, e.gender || 'X'); });
 
+            // Apply sorting by gender then name
+            const sortedEntries = sortEntriesByGenderThenName(entries.slice());
+
             // Update current room sidebar if the payload matches current room
             if (json.room && json.room === currentRoomName) {
-              currentRoomUsers = new Set(entries.map(e=>e.login));
+              currentRoomUsers = new Set(sortedEntries.map(e=>e.login));
               renderCurrentRoomUsers();
             }
 
@@ -922,10 +953,11 @@
             const panel = document.getElementById('usersListPanel');
             const title = 'Utilisateurs dans le salon (' + (json.room||'?') + ')';
             let html = '<div class="small muted">' + title + '</div>';
-            if (entries.length) {
-              html += entries.map(function(e){
+            if (sortedEntries.length) {
+              html += sortedEntries.map(function(e){
                 const selfCls = (e.login===currentLogin ? ' self' : '');
-                return '<div class="msg' + selfCls + '\">' + renderUserHTML(e.login) + '</div>';
+                const gcls = ' g-' + genderCodeToClass(e.gender || 'X');
+                return '<div class="msg' + selfCls + gcls + '\">' + renderUserHTML(e.login) + '</div>';
               }).join('');
             } else {
               html += '<div class="msg">' + (Array.isArray(list) ? '' : (list ?? '')) + '</div>';
@@ -954,10 +986,13 @@
             }
             // Update gender map
             entries.forEach(function(e){ if (e && e.login) userGenders.set(e.login, e.gender || 'X'); });
-            if (entries.length) {
-              html += entries.map(function(e){
+            // Apply sorting by gender then name
+            const sorted = sortEntriesByGenderThenName(entries.slice());
+            if (sorted.length) {
+              html += sorted.map(function(e){
                 const selfCls = (e.login===currentLogin ? ' self' : '');
-                return '<div class="msg' + selfCls + '\">' + renderUserHTML(e.login) + '</div>';
+                const gcls = ' g-' + genderCodeToClass(e.gender || 'X');
+                return '<div class="msg' + selfCls + gcls + '\">' + renderUserHTML(e.login) + '</div>';
               }).join('');
             } else {
               html += '<div class="msg">' + (list ?? '') + '</div>';
@@ -991,9 +1026,10 @@
         if (json.type === 'roomsList'){
           try {
             const rooms = json.rooms || {};
-            const entries = Object.entries(rooms);
+            // Sort by population (count) descending
+            const entries = Object.entries(rooms).sort(function(a,b){ return (b[1]|0) - (a[1]|0); });
             const html = entries.length
-              ? entries.map(([name, count]) => '<div class="msg room-item" data-room="' + name + '"><span class="meta">' + name + '</span> (' + count + ')</div>').join('')
+              ? entries.map(([name, count]) => '<div class="msg room-item" data-room="' + name + '"><span class="meta">' + name + '</span> (<span class="room-count">' + count + '</span>)</div>').join('')
               : '<div class="muted small">Aucun salon</div>';
             document.getElementById('roomsListPanel').innerHTML = html;
             activateTabByTarget('panel-rooms');
