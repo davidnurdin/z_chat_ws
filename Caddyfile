@@ -1,5 +1,12 @@
 {
-	frankenphp
+    skip_install_trust
+
+    {$CADDY_GLOBAL_OPTIONS}
+
+    frankenphp {
+		{$FRANKENPHP_CONFIG}
+	}
+
 	# Ensure our custom handler directive is ordered relative to others
 	# order websocket before file_server
 	websocket {
@@ -8,6 +15,8 @@
 		min_threads 5 # Optional, defaults to runtime.NumCPU()
 	}
 }
+
+{$CADDY_EXTRA_CONFIG}
 
 # {$SERVER_NAME:localhost}:80 si traefik devant et qu'on veux servir port 80
 
