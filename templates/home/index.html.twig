@@ -141,14 +141,14 @@
     <label><input type="radio" name="gender" value="H"> H</label>
     <label><input type="radio" name="gender" value="F"> F</label>
     <label><input type="radio" name="gender" value="X" checked> X</label>
-    <input type="button" id="btn1" value="Se connecter" onclick="authenticate()">
+    <input type="button" id="btn1" value="Se connecter" onclick="authenticate()" disabled>
   </div>
 
   <div class="tabs" id="tabs">
     <button class="tab active" data-target="panel-infos">Infos</button>
     <button class="tab gated" data-target="panel-users">Connectés</button>
     <button class="tab gated" data-target="panel-rooms">Salons</button>
-    <button class="tab gated" data-target="panel-current" id="tab-current-room"><span id="tab-current-room-label">Salon : -</span><span id="mobileUsersIcon" class="mobile-users-icon" title="Membres" aria-label="Membres" role="button">👥</span></button>
+    <button class="tab gated" data-target="panel-current" id="tab-current-room"><span id="tab-current-room-label">-</span><span id="mobileUsersIcon" class="mobile-users-icon" title="Membres" aria-label="Membres" role="button">👥</span></button>
     <!-- Private tabs will be appended here -->
   </div>
   <div class="panels">
@@ -194,6 +194,7 @@
     <div class="panel active" id="panel-infos">
       <div class="small muted">Informations / Debug</div>
       <div id="debugMessages" class="messages"></div>
+      <div id="lastPingLine" class="small muted" style="margin-top:.25rem;"></div>
     </div>
 
     <!-- Private panels will be appended here -->
@@ -296,16 +297,19 @@
       if(isActive) t.classList.remove('notify');
     });
     document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id===targetId));
-    // Focus appropriate composer when a tab becomes active
+    // Focus appropriate composer when a tab becomes active (desktop only to avoid mobile keyboard pop-up)
     try {
-      if (targetId === 'panel-current') {
-        const roomInput = document.getElementById('roomInput');
-        if (roomInput) { roomInput.focus(); roomInput.select && roomInput.select(); }
-      } else if (typeof targetId === 'string' && targetId.indexOf('panel-private-') === 0) {
-        const p = document.getElementById(targetId);
-        if (p) {
-          const input = p.querySelector('textarea, input[type="text"]');
-          if (input) { input.focus(); input.select && input.select(); }
+      const isMobile = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 900px)').matches);
+      if (!isMobile) {
+        if (targetId === 'panel-current') {
+          const roomInput = document.getElementById('roomInput');
+          if (roomInput) { roomInput.focus(); roomInput.select && roomInput.select(); }
+        } else if (typeof targetId === 'string' && targetId.indexOf('panel-private-') === 0) {
+          const p = document.getElementById(targetId);
+          if (p) {
+            const input = p.querySelector('textarea, input[type="text"]');
+            if (input) { input.focus(); input.select && input.select(); }
+          }
         }
       }
     } catch (_) { /* noop */ }
@@ -355,12 +359,15 @@
         if(panel) panel.innerHTML = '';
         listAllUsersByType('standardUser');
       }
-      // Focus the composer input when selecting a private tab
+      // Focus the composer input when selecting a private tab (desktop only)
       if (typeof target === 'string' && target.indexOf('panel-private-') === 0) {
-        const p = document.getElementById(target);
-        if (p) {
-          const input = p.querySelector('textarea, input[type="text"]');
-          if (input) { try { input.focus(); input.select && input.select(); } catch(_){} }
+        const isMobile = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 900px)').matches);
+        if (!isMobile) {
+          const p = document.getElementById(target);
+          if (p) {
+            const input = p.querySelector('textarea, input[type="text"]');
+            if (input) { try { input.focus(); input.select && input.select(); } catch(_){} }
+          }
         }
       }
     }
@@ -523,38 +530,86 @@
   (function(){
     const panel = document.getElementById('currentRoomUsers');
     if(panel){
+      function isMobileUsersOpen(){
+        try { const m = document.getElementById('mobileUsersModal'); return !!(m && m.classList.contains('open')); } catch(_) { return false; }
+      }
+      function closeMobileUsersIfOpen(){
+        try {
+          if (typeof window !== 'undefined' && typeof window.closeMobileUsersModal === 'function' && isMobileUsersOpen()) {
+            window.closeMobileUsersModal();
+          }
+        } catch(_){}
+      }
+      let singleClickTimer = null;
+      let suppressClicksUntil = 0;
+
+      function handleSingleClick(user){
+        if (!user || isSelf(user)) return;
+        // Only prefill if salon panel is active
+        const currentPanel = document.getElementById('panel-current');
+        if (!currentPanel || !currentPanel.classList.contains('active')) return;
+        const input = document.getElementById('roomInput');
+        if(input){
+          input.value = user + ' > ';
+          try { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; } catch(_){ }
+          // Close mobile users modal if open
+          closeMobileUsersIfOpen();
+        }
+      }
+
+      function handleDoubleClick(user){
+        if(user && !isSelf(user)){
+          const {panel: privPanel} = ensurePrivateTab(user);
+          activateTabByTarget(privPanel.id);
+          // Close mobile users modal if open
+          closeMobileUsersIfOpen();
+        } else if (user && isSelf(user)) {
+          debugLog('Conversation privée avec vous‑même non autorisée.\n');
+        }
+      }
+
       panel.addEventListener('click', function(e){
+        const now = Date.now();
+        if (now < suppressClicksUntil) {
+          return;
+        }
         const item = e.target.closest('.msg');
         if(!item || !panel.contains(item)) return;
         const user = (item.textContent || '').trim();
         if(!user) return;
-        if (isSelf(user)) return; // prevent selecting own pseudo
-        const input = document.getElementById('roomInput');
-        if(input){
-          input.value = user + ' > ';
-          try { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; } catch(_){}
+
+        // Double-click detection on same user within DOUBLE_DELAY
+        if (lastClickUser === user && (now - lastClickTime) <= DOUBLE_DELAY) {
+          // It's a double click: cancel pending single, reset state, and open private
+          if (singleClickTimer){ clearTimeout(singleClickTimer); singleClickTimer = null; }
+          lastClickUser = null;
+          lastClickTime = 0;
+          handleDoubleClick(user);
+          return;
         }
+        // Otherwise, set up single-click with deferral
+        lastClickUser = user;
+        lastClickTime = now;
+        if (singleClickTimer){ clearTimeout(singleClickTimer); }
+        singleClickTimer = setTimeout(function(){ handleSingleClick(user); lastClickUser = null; lastClickTime = 0; }, DOUBLE_DELAY + 20);
       });
-      panel.addEventListener('dblclick', function(e){
-        const item = e.target.closest('.msg');
-        if(!item || !panel.contains(item)) return;
-        const user = (item.textContent || '').trim();
-        if(user && !isSelf(user)){
-          const {panel: privPanel} = ensurePrivateTab(user);
-          activateTabByTarget(privPanel.id);
-        } else if (user && isSelf(user)) {
-          debugLog('Conversation privée avec vous‑même non autorisée.\n');
-        }
-      });
+
+      // Custom double-click detection using click timing on the same user
+      // We avoid relying on the native dblclick which can be unreliable in some browsers/contexts
+      let lastClickTime = 0;
+      let lastClickUser = null;
+      const DOUBLE_DELAY = 300;
+
+      // NOTE: The native dblclick handler is intentionally removed; we implement it via click timing.
+
       // Long-press to open private on touch devices
       addLongPress(panel, '.msg', function(item){
         const user = (item.textContent || '').trim();
-        if(user && !isSelf(user)){
-          const {panel: privPanel} = ensurePrivateTab(user);
-          activateTabByTarget(privPanel.id);
-        } else if (user && isSelf(user)) {
-          debugLog('Conversation privée avec vous‑même non autorisée.\n');
-        }
+        // suppress subsequent click for a short time and reset double-click tracking
+        suppressClicksUntil = Date.now() + 400;
+        if (singleClickTimer){ clearTimeout(singleClickTimer); singleClickTimer = null; }
+        lastClickUser = null; lastClickTime = 0;
+        handleDoubleClick(user);
       });
     }
   })();
@@ -654,7 +709,8 @@
     const label = document.getElementById('tab-current-room-label');
     if(!tab) return;
     if (!currentRoomName || currentRoomName === '-') {
-      if (label) { label.textContent = 'Salon : -'; } else { tab.textContent = 'Salon : -'; }
+      const text = 'Salon : -';
+      if (label) { label.textContent = text; } else { tab.textContent = text; }
       return;
     }
     const count = (currentRoomUsers && typeof currentRoomUsers.size === 'number') ? currentRoomUsers.size : 0;
@@ -708,7 +764,8 @@
     panel.innerHTML = '<div class="messages" id="messages-private-' + user + '"></div>'+
       '<div class="composer">\n' +
       '  <textarea rows="2" placeholder="Message privé à ' + user + '..." oninput="autosizeTextarea(this)" onkeydown="if(event.key===\'Enter\' && !event.shiftKey){ event.preventDefault(); sendFromComposer(this,\'private\', \'' + user + '\'); }"></textarea>\n' +
-      '  <button class="send-btn" title="Envoyer" onclick="sendFromComposer(this.previousElementSibling,\'private\', \'' + user + '\')">-&gt;</button>\n' +
+      '  <button type="button" class="emoji-btn" title="Insérer un emoji">:-)</button>\n' +
+      '  <button class="send-btn" title="Envoyer" onclick="sendFromComposer(this.previousElementSibling.previousElementSibling,\'private\', \'' + user + '\')">-&gt;</button>\n' +
       '</div>';
     document.querySelector('.panels').appendChild(panel);
 
@@ -767,10 +824,10 @@
   function appendMessage(containerId, text, opts){
     const box = document.getElementById(containerId);
     if(!box) return;
-    // Determine if user is near the bottom before appending (except Debug which always autoscrolls)
+    // Determine if user is near the bottom before appending (Infos uses newest-first so different behavior)
     const threshold = 8; // px
-    const forceAuto = (containerId === 'debugMessages');
-    const isNearBottom = forceAuto || ((box.scrollTop + box.clientHeight) >= (box.scrollHeight - threshold));
+    const isDebug = (containerId === 'debugMessages');
+    const isNearBottom = (!isDebug) && ((box.scrollTop + box.clientHeight) >= (box.scrollHeight - threshold));
     const div = document.createElement('div');
     let cls = 'msg';
     if (opts && opts.system) { cls += ' system'; }
@@ -784,7 +841,12 @@
     if (opts && opts.bold) {
       div.style.fontWeight = '700';
     }
-    box.appendChild(div);
+    // In the Infos tab, show newest on top: prepend instead of append
+    if (isDebug) {
+      box.insertBefore(div, box.firstChild);
+    } else {
+      box.appendChild(div);
+    }
 
     // Record history for private conversations
     try {
@@ -796,18 +858,26 @@
       }
     } catch(_){ }
 
-    // Auto-scroll: always for Infos/Debug; else only if user wasn't reading older messages
-    if (forceAuto || isNearBottom) {
+    // Auto-scroll
+    if (isDebug) {
+      // Keep the view pinned to the top so the most recent (prepended) message stays visible
+      box.scrollTop = 0;
+    } else if (isNearBottom) {
+      // For others, only auto-scroll if user was already near the bottom
       box.scrollTop = box.scrollHeight;
     }
   }
 
   // Existing controls
-  setInterval(function(){
-    let trame = {'type': 'getTimePing'};
-    socket.send(JSON.stringify(trame));
-    debugLog('get Time Ping sent...\n');
-  },30000);
+  let pingSenderInterval = setInterval(function(){
+    try {
+      if (socket && socket.readyState === 1) {
+        let trame = {'type': 'getTimePing'};
+        socket.send(JSON.stringify(trame));
+        //debugLog('get Time Ping sent...\n');
+      }
+    } catch(_){ /* ignore if not connected */ }
+  },5000);
 
   function debugLog(text){
     try {
@@ -818,6 +888,14 @@
       });
     } catch(_) { /* noop */ }
     notifyTab('panel-infos');
+  }
+
+  // Helper: re-display login controls row
+  function showLoginControls(){
+    try {
+      var c = document.querySelector('.controls');
+      if (c) c.style.display = '';
+    } catch(_) { /* noop */ }
   }
 
   function revealGatedUI(){
@@ -875,14 +953,85 @@
     debugLog('Authentication sent...\n');
   }
 
-  // WebSocket connection
-  const socket = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/chat');
-  socket.addEventListener('open', function(){
-    debugLog('WebSocket is connected...\n');
-    socket.addEventListener('close', function(){ console.log('WebSocket is closed...'); });
-  });
+  // WebSocket connection with auto-reconnect and button gating
+  let socket = null;
+  const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/chat';
+  let reconnectTimer = null;
+  // Heartbeat tracking for inactivity disconnect
+  let lastFrameAt = Date.now();
+  let pingWatchTimer = null;
+  function startPingWatch(){
+    try { if (pingWatchTimer) { clearInterval(pingWatchTimer); } } catch(_){ }
+    pingWatchTimer = setInterval(function(){
+      try {
+        const now = Date.now();
+        if (now - lastFrameAt > 20000) { // > 20 sec without any frame
+          appendMessage('debugMessages', 'Connexion perdue: aucune trame reçue depuis plus de 20 secondes, déconnexion…', {system: true});
+          notifyTab('panel-infos');
+          try { socket && socket.close && socket.close(); } catch(_) {}
+          try { if (pingWatchTimer) { clearInterval(pingWatchTimer); pingWatchTimer = null; } } catch(_){ }
+          // Re-display login controls so user can reconnect (will also try to reopen WS)
+          showLoginControls();
+        }
+      } catch(_) {}
+    }, 10000);
+  }
+  function setConnectButtonEnabled(enabled){
+    try { var b = document.getElementById('btn1'); if (b) b.disabled = !enabled; } catch(_){ }
+  }
+  function scheduleReconnect(){
+    if (reconnectTimer) return;
+    reconnectTimer = setInterval(function(){
+      try {
+        if (socket && (socket.readyState === 0 || socket.readyState === 1)) return; // connecting or open
+      } catch(_){}
+      try { connectSocket(); } catch(_){}
+    }, 5000);
+  }
+  function clearReconnect(){
+    try { if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; } } catch(_){ }
+  }
+  function onSocketOpen(){
+    lastFrameAt = Date.now();
+    debugLog('WebSocket connecté.\n');
+    setConnectButtonEnabled(true);
+    clearReconnect();
+    startPingWatch();
+  }
+  function onSocketClose(ev){
+    appendMessage('debugMessages', 'Connexion fermée' + (ev && ev.code ? ' (code ' + ev.code + ')' : '') + '.', {system: true});
+    appendMessage('debugMessages', 'Veuillez patienter reconnexion en cours ...', {system: true});
 
-  socket.addEventListener('message', function (event) {
+    notifyTab('panel-infos');
+    try { if (pingWatchTimer) { clearInterval(pingWatchTimer); pingWatchTimer = null; } } catch(_){ }
+    setConnectButtonEnabled(false);
+    showLoginControls();
+    scheduleReconnect();
+  }
+  function onSocketError(){
+    appendMessage('debugMessages', 'Erreur de connexion WebSocket.', {system: true});
+    notifyTab('panel-infos');
+    try { if (pingWatchTimer) { clearInterval(pingWatchTimer); pingWatchTimer = null; } } catch(_){ }
+    setConnectButtonEnabled(false);
+    showLoginControls();
+    scheduleReconnect();
+  }
+  function connectSocket(){
+    try { if (socket && socket.readyState === 1) return; } catch(_){ }
+    try { if (socket) { try { socket.close(); } catch(_){} } } catch(_){ }
+    setConnectButtonEnabled(false);
+    socket = new WebSocket(WS_URL);
+    socket.addEventListener('open', onSocketOpen);
+    socket.addEventListener('close', onSocketClose);
+    socket.addEventListener('error', onSocketError);
+    socket.addEventListener('message', onSocketMessage);
+  }
+  // Begin first connection
+  setConnectButtonEnabled(false);
+  connectSocket();
+
+  function onSocketMessage(event) {
+    try { lastFrameAt = Date.now(); } catch(_) {}
     let data = event.data;
     if (data instanceof Blob) {
       let reader = new FileReader();
@@ -916,6 +1065,15 @@
         if (json.type === 'countAll'){
           debugLog('Count all users : ' + json.count + '\n');
           try { setUsersTabCount(json.count); } catch(_) {}
+        }
+
+        if (json.type === 'getTimePing'){
+          try {
+            const ms = ((json.time || 0) / 100000).toFixed(2);
+            const tstr = new Date().toLocaleTimeString();
+            const el = document.getElementById('lastPingLine');
+            if (el) { el.textContent = 'Last ping: ' + ms + ' ms — reçu à ' + tstr; }
+          } catch(_){ }
         }
 
         if (json.type === 'enterRoom'){
@@ -1081,7 +1239,7 @@
       };
       reader.readAsText(data);
     }
-  });
+  }
   // Emoji picker logic
   (function(){
     const EMOJIS = [
@@ -1141,17 +1299,17 @@
       else { openFor(btn, input); }
     }
 
-    // Click handler on emoji button (room)
-    (function(){
-      const btn = document.getElementById('roomEmojiBtn');
-      const input = document.getElementById('roomInput');
-      if (btn && input){
-        btn.addEventListener('click', function(e){
-          e.preventDefault();
-          toggleFor(btn, input);
-        });
-      }
-    })();
+    // Delegated click handler for any emoji button (room or private composers)
+    document.addEventListener('click', function(e){
+      const btn = e.target && e.target.closest ? e.target.closest('.emoji-btn') : null;
+      if (!btn) return;
+      const composer = btn.closest('.composer');
+      if (!composer) return;
+      const input = composer.querySelector('textarea, input[type="text"]');
+      if (!input) return;
+      e.preventDefault();
+      toggleFor(btn, input);
+    });
 
     // Delegate clicks on emojis
     if (grid){

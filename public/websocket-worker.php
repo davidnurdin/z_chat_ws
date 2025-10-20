@@ -52,7 +52,7 @@ $handler = static function (array $event): array  {
         sendToClient($event['Connection'], ['type' => 'message', 'payload' => 'Welcome! Your connection ID is ' . $event['Connection']]);
         sendToAll( ['type' => 'countAll', 'count' => frankenphp_ws_getClientsCount()],$event['Connection']) ;
         frankenphp_ws_enablePing($event['Connection']);
-        frankenphp_ws_enablePing($event['Connection'],30000);
+        frankenphp_ws_enablePing($event['Connection'],5000);
         frankenphp_ws_enableQueueCounter($event['Connection'],300,2);
 
 
