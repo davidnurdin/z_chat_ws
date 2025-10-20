@@ -20,7 +20,8 @@ RUN apt-get update && apt-get install -y git unzip libnss3-tools nodejs npm && \
 
 # Install project dependencies
 RUN composer install --no-dev --optimize-autoloader
-
+RUN npm install
+RUN npm build
 
 # Commande de démarrage
 ENTRYPOINT ["/app/websocket", "run"]
