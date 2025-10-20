@@ -400,6 +400,9 @@
       root.setAttribute('data-theme', m);
       var btn = document.getElementById('themeToggle');
       if (btn) { btn.textContent = (m === 'dark') ? '🌙' : '☀️'; }
+      try { reapplyMessageColors(); } catch(_){ }
+      try { if (typeof reapplyColorButtons === 'function') reapplyColorButtons(); } catch(_){ }
+      try { if (typeof window.refreshColorPopupVisuals === 'function') window.refreshColorPopupVisuals(); } catch(_){ }
     }
     function init(){
       var saved = null;
@@ -1002,7 +1005,14 @@
       const btn = panel.querySelector('.color-btn');
       const col = sanitizeRoomColor((privateColors && privateColors.get ? privateColors.get(user) : null) || '#000000');
       privateColors.set(user, col);
-      if (btn) { btn.style.setProperty('--clr', col); btn.style.background = col; btn.textContent = '■'; }
+      if (btn) {
+        btn.dataset.originalColor = col;
+        const disp = adjustReceivedColor(col);
+        btn.style.setProperty('--clr', col);
+        btn.style.background = disp;
+        btn.style.borderColor = isDarkTheme() ? '#334155' : '#e5e7eb';
+        btn.textContent = '■';
+      }
     } catch(_){}
 
     // Insert one-time system safety warning
@@ -1134,7 +1144,8 @@
     socket.send(JSON.stringify(trame));
     debugLog('PM -> ' + to + ': ' + message + '\n');
     const {panel} = ensurePrivateTab(to);
-    const html = renderUserHTML(currentLogin) + ' &gt; ' + '<span style="color: ' + color + ';">' + escapeHtml(message) + '</span>';
+    const dispColor = adjustReceivedColor(color);
+    const html = renderUserHTML(currentLogin) + ' &gt; ' + '<span data-original-color="' + color + '" style="color: ' + dispColor + ';">' + escapeHtml(message) + '</span>';
     appendMessage('messages-private-' + to, currentLogin + ' > ' + message, {bold: true, html, extraClass: ('g-' + genderCodeToClass(currentGender || 'X'))});
     activateTabByTarget(panel.id);
   }
@@ -1149,6 +1160,71 @@
     // Optionally accept any valid 6-hex color
     if (/^#[0-9a-fA-F]{6}$/.test(c)) return c;
     return '#000000';
+  }
+  // Determine if the current theme is dark
+  function isDarkTheme(){
+    try {
+      var root = document.documentElement;
+      var attr = root.getAttribute('data-theme');
+      if (attr === 'dark') return true;
+      if (attr === 'light') return false;
+      // fallback to system preference
+      if (window.matchMedia) { return window.matchMedia('(prefers-color-scheme: dark)').matches; }
+    } catch(_){ }
+    return false;
+  }
+  // For received messages, swap pure black/white to keep readability with the current theme
+  function adjustReceivedColor(color){
+    try {
+      var c = (color || '').trim();
+      if (!/^#[0-9a-fA-F]{6}$/.test(c)) return color; // keep original if not a 6-hex color
+      var up = c.toUpperCase();
+      // Keep the simple swap for pure black/white
+      if (up === '#000000' && isDarkTheme()) return '#FFFFFF';
+      if (up === '#FFFFFF' && !isDarkTheme()) return '#000000';
+
+      // Compute relative luminance (WCAG)
+      var r = parseInt(c.substr(1,2),16) / 255;
+      var g = parseInt(c.substr(3,2),16) / 255;
+      var b = parseInt(c.substr(5,2),16) / 255;
+      function lin(v){ return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); }
+      var L = 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+
+      // Thresholds chosen for readability without being too aggressive
+      if (isDarkTheme()) {
+        // On dark background, only flip near-black tones to white (preserve vivid colors like fuchsia)
+        if (L < 0.12) return '#FFFFFF';
+      } else {
+        // On light background, only flip near-white tones to black
+        if (L > 0.92) return '#000000';
+      }
+      return c;
+    } catch(_){ return color; }
+  }
+  // Re-apply adjusted colors to all rendered messages when theme changes
+  function reapplyMessageColors(){
+    try {
+      var spans = document.querySelectorAll('span[data-original-color]');
+      spans.forEach(function(s){
+        var orig = s.getAttribute('data-original-color') || '#000000';
+        var clean = sanitizeRoomColor(orig);
+        var adj = adjustReceivedColor(clean);
+        s.style.color = adj;
+      });
+    } catch(_){ }
+  }
+  function reapplyColorButtons(){
+    try {
+      var btns = document.querySelectorAll('.color-btn');
+      btns.forEach(function(btn){
+        var orig = btn.dataset && btn.dataset.originalColor ? btn.dataset.originalColor : (btn.style.getPropertyValue('--clr') || '#000000');
+        var clean = sanitizeRoomColor(orig);
+        var adj = adjustReceivedColor(clean);
+        btn.dataset.originalColor = clean;
+        btn.style.setProperty('--clr', clean);
+        btn.style.background = adj;
+      });
+    } catch(_){ }
   }
   function writeRoom(message){
     if(!message) return;
@@ -1310,6 +1386,28 @@
           }
         }
 
+        // Room history (last 20)
+        if (json.type === 'roomHistory'){
+          try {
+            if (json.room && json.room !== currentRoomName) { /* ignore history for other room */ return; }
+            const list = Array.isArray(json.list) ? json.list : [];
+            // Render oldest to newest
+            list.forEach(function(m){
+              const from = (m && m.from) ? m.from : '?';
+              const payload = (m && typeof m.payload === 'string') ? m.payload : '';
+              let origColor = sanitizeRoomColor((m && m.color) ? m.color : '#000000');
+              let dispColor = adjustReceivedColor(origColor);
+              const ts = (m && m.ts) ? new Date(m.ts * 1000) : null;
+              const timeStr = ts ? '[' + ts.toLocaleTimeString() + '] ' : '';
+              const meta = timeStr ? '<span class="meta">' + timeStr + '</span>' : '';
+              const html = meta + renderUserHTML(from) + ' &gt; ' + '<span data-original-color="' + origColor + '" style="color: ' + dispColor + ';">' + escapeHtml(payload) + '</span>';
+              const g = getUserGender(from) || 'X';
+              const extraClass = 'g-' + genderCodeToClass(g);
+              appendMessage('currentRoomMessages', from + ' > ' + payload, {html, extraClass});
+            });
+          } catch(_){ }
+        }
+
         if (json.type === 'writeRoom'){
           debugLog((json.status==='ok' ? 'Message sent to room successfully' : 'Failed to send message to room') + '\n');
         }
@@ -1318,8 +1416,9 @@
           const from = json.from || '?';
           const payload = json.payload || '';
           const highlight = (from === currentLogin) || (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0);
-          const color = sanitizeRoomColor(json.color || '#000000');
-          const html = renderUserHTML(from) + ' &gt; ' + '<span style="color: ' + color + ';">' + escapeHtml(payload) + '</span>';
+          let origColor = sanitizeRoomColor(json.color || '#000000');
+          let dispColor = adjustReceivedColor(origColor);
+          const html = renderUserHTML(from) + ' &gt; ' + '<span data-original-color="' + origColor + '" style="color: ' + dispColor + ';">' + escapeHtml(payload) + '</span>';
           const g = getUserGender(from) || 'X';
           const extraClass = 'g-' + genderCodeToClass(g);
           appendMessage('currentRoomMessages', from + ' > ' + payload, {bold: !!highlight, html, extraClass});
@@ -1332,8 +1431,9 @@
         if (json.type === 'messagePrivate'){
           const from = json.from || 'inconnu';
           const {panel} = ensurePrivateTab(from);
-          const color = sanitizeRoomColor(json.color || '#000000');
-          const html = renderUserHTML(from) + ' &gt; ' + '<span style="color: ' + color + ';">' + escapeHtml(json.payload || '') + '</span>';
+          let origColor = sanitizeRoomColor(json.color || '#000000');
+          let dispColor = adjustReceivedColor(origColor);
+          const html = renderUserHTML(from) + ' &gt; ' + '<span data-original-color="' + origColor + '" style="color: ' + dispColor + ';">' + escapeHtml(json.payload || '') + '</span>';
           const g = getUserGender(from) || 'X';
           const extraClass = 'g-' + genderCodeToClass(g);
           appendMessage('messages-private-' + from, (json.from||'?') + ' > ' + (json.payload||''), {html, extraClass});
@@ -1572,7 +1672,10 @@
 
     function swatch(c){
       const title = c;
-      return '<div class="item" data-color="' + c + '" title="' + title + '" style="gap:6px;"><div class="emo" style="width:24px;height:24px;border-radius:6px;border:1px solid #e5e7eb;background:' + c + ';"></div></div>';
+      const orig = sanitizeRoomColor(c);
+      const disp = adjustReceivedColor(orig);
+      const bdc = isDarkTheme() ? '#334155' : '#e5e7eb';
+      return '<div class="item" data-color="' + orig + '" title="' + title + '" style="gap:6px;"><div class="emo" style="width:24px;height:24px;border-radius:6px;border:1px solid ' + bdc + ';background:' + disp + ';"></div></div>';
     }
     function populate(){
       if (!grid) return;
@@ -1604,8 +1707,12 @@
     }
     function setButtonColor(btn, color){
       try {
-        btn.style.setProperty('--clr', color);
-        btn.style.background = color;
+        const orig = sanitizeRoomColor(color || '#000000');
+        const disp = adjustReceivedColor(orig);
+        btn.dataset.originalColor = orig;
+        btn.style.setProperty('--clr', orig);
+        btn.style.background = disp;
+        btn.style.borderColor = isDarkTheme() ? '#334155' : '#e5e7eb';
         btn.textContent = '■';
       } catch(_){ }
     }
@@ -1657,6 +1764,17 @@
     window.addEventListener('keydown', function(e){ if (e.key === 'Escape' && popup.classList.contains('open')) close(); });
     window.addEventListener('resize', function(){ if (popup.classList.contains('open') && anchorBtn) positionPopup(anchorBtn); });
     window.addEventListener('scroll', function(){ if (popup.classList.contains('open') && anchorBtn) positionPopup(anchorBtn); }, true);
+
+    // Expose a refresh helper to rebuild palette on theme change
+    window.refreshColorPopupVisuals = function(){
+      try {
+        if (!popup) return;
+        if (popup.classList.contains('open')) {
+          populate();
+          if (anchorBtn) positionPopup(anchorBtn);
+        }
+      } catch(_){ }
+    };
 
     // Initialize room button color on load
     try {

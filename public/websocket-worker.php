@@ -44,6 +44,28 @@ function sendToTagExpression($expression,$message,$fromConnectionId = null) {
     frankenphp_ws_sendToTagExpression($expression,$msg);
 }
 
+// ===== Room history helpers (per-room, keep last 20) =====
+function room_history_key(string $room): string {
+    return 'room_' . $room . '_history';
+}
+function room_history_load(string $room): array {
+    $key = room_history_key($room);
+    $raw = frankenphp_ws_global_get($key);
+    if ($raw === '' || $raw === null) return [];
+    $arr = json_decode($raw, true);
+    return is_array($arr) ? $arr : [];
+}
+function room_history_save(string $room, array $entries): void {
+    // keep only last 20 entries
+    $entries = array_values(array_slice($entries, -20));
+    frankenphp_ws_global_set(room_history_key($room), json_encode($entries));
+}
+function room_history_append(string $room, array $entry): void {
+    $hist = room_history_load($room);
+    $hist[] = $entry;
+    room_history_save($room, $hist);
+}
+
 // Handler outside the loop for better performance (doing less work)
 $handler = static function (array $event): array  {
 
@@ -178,6 +200,10 @@ $handler = static function (array $event): array  {
             ];
             sendToClient($event['Connection'], ['type' => 'listUserInRoom', 'room' => $data['name'] , 'list' => $list]);
 
+            // Send last 20 history messages for this room to the entering client
+            $history = room_history_load($data['name']);
+            sendToClient($event['Connection'], ['type' => 'roomHistory', 'room' => $data['name'], 'list' => $history]);
+
         }
 
         if ($data['type'] == 'writeRoom')
@@ -188,13 +214,25 @@ $handler = static function (array $event): array  {
             if (isset($data['color']) && is_string($data['color']) && preg_match('/^#[0-9a-fA-F]{6}$/', $data['color'])) {
                 $color = $data['color'];
             }
+            $fromLogin = frankenphp_ws_getStoredInformation($event['Connection'],'login');
+            $payload = isset($data['message']) ? (string)$data['message'] : '';
             sendToTag('room_' . $currentRoom,[
                 'type' => 'messageRoom',
-                'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login'),
+                'from' => $fromLogin,
                 'name' => $currentRoom,
-                'payload' => $data['message'],
+                'payload' => $payload,
                 'color' => $color
             ],$event['Connection']);
+
+            // Append to room history (keep last 20)
+            $entry = [
+                'from' => $fromLogin,
+                'name' => $currentRoom,
+                'payload' => $payload,
+                'color' => $color,
+                'ts' => time()
+            ];
+            room_history_append($currentRoom, $entry);
 
         }
 
