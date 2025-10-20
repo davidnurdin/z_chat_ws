@@ -86,6 +86,15 @@
   .composer .send-btn { appearance: none; border: none; background: #2563eb; color: #fff; padding: 0 .9rem; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; height: var(--composer-h); min-height: var(--composer-h); }
   .composer .send-btn:hover { background: #1d4ed8; }
   .composer .send-btn:active { transform: translateY(1px); }
+  .composer .emoji-btn { appearance: none; border: 1px solid #e5e7eb; background: #f3f4f6; color: #111; padding: 0 .7rem; border-radius: 8px; cursor: pointer; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; height: var(--composer-h); min-height: var(--composer-h); }
+  .composer .emoji-btn:hover { background: #e5e7eb; }
+  .emoji-popup { position: fixed; z-index: 9999; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 10px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08); padding: .5rem; width: 260px; display: none; }
+  .emoji-popup.open { display: block; }
+  .emoji-popup .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .35rem; }
+  .emoji-popup .item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; padding: .35rem; border-radius: 8px; cursor: pointer; user-select: none; border: 1px solid transparent; }
+  .emoji-popup .item:hover { background: #f3f4f6; border-color: #e5e7eb; }
+  .emoji-popup .emo { font-size: 20px; line-height: 1; }
+  .emoji-popup .sc { font-size: 11px; color: #6b7280; }
 
   .muted { color: #6b7280; }
   .small { font-size: .85em; }
@@ -154,8 +163,9 @@
         <div class="left">
           <div class="title small muted">Messages du salon</div>
           <div class="messages" id="currentRoomMessages"></div>
-          <div class="composer">
+          <div class="composer" id="roomComposer">
             <input type="text" id="roomInput" placeholder="Votre message au salon en cours..." onkeydown="if(event.key==='Enter'){ event.preventDefault(); sendFromComposer(this,'room'); }" />
+            <button type="button" class="emoji-btn" id="roomEmojiBtn" title="Insérer un emoji">:-)</button>
             <button class="send-btn" title="Envoyer" onclick="sendFromComposer(document.getElementById('roomInput'),'room')">-&gt;</button>
           </div>
         </div>
@@ -173,6 +183,11 @@
 
     <!-- Private panels will be appended here -->
   </div>
+</div>
+
+<!-- Emoji picker popup -->
+<div id="emojiPopup" class="emoji-popup" role="dialog" aria-label="Sélecteur d'emoji" aria-modal="false">
+  <div class="grid" id="emojiGrid"></div>
 </div>
 
 <script>
@@ -1041,6 +1056,108 @@
       reader.readAsText(data);
     }
   });
+  // Emoji picker logic
+  (function(){
+    const EMOJIS = [
+      '😀','😄','😅','😂','😊','😍','😘','😎','🤗','🤩',
+      '🤔','🙃','😉','😜','🥳','👍','👏','🔥','❤️','🎉'
+    ];
+    const popup = document.getElementById('emojiPopup');
+    const grid = document.getElementById('emojiGrid');
+    let anchorBtn = null;
+    let targetInput = null;
+
+    function populate(){
+      if (!grid) return;
+      grid.innerHTML = EMOJIS.map(function(emo){
+        return '<div class="item" data-emo="' + emo + '" title="' + emo + '"><div class="emo">' + emo + '</div></div>';
+      }).join('');
+    }
+
+    function insertAtCaret(input, text){
+      try {
+        const start = input.selectionStart || 0;
+        const end = input.selectionEnd || 0;
+        const v = input.value || '';
+        input.value = v.slice(0, start) + text + v.slice(end);
+        const pos = start + text.length;
+        input.focus();
+        input.setSelectionRange && input.setSelectionRange(pos, pos);
+      } catch(_){ input.value += text; try{ input.focus(); }catch(_){} }
+    }
+
+    function positionPopup(){
+      if (!popup || !anchorBtn) return;
+      const r = anchorBtn.getBoundingClientRect();
+      const left = Math.min(window.innerWidth - popup.offsetWidth - 8, Math.max(8, r.left));
+      let top = r.bottom + 6;
+      if (top + popup.offsetHeight + 8 > window.innerHeight) {
+        top = Math.max(8, r.top - popup.offsetHeight - 6);
+      }
+      popup.style.left = left + 'px';
+      popup.style.top = Math.max(8, top) + 'px';
+    }
+
+    function openFor(btn, input){
+      anchorBtn = btn; targetInput = input;
+      populate();
+      popup.classList.add('open');
+      positionPopup();
+      // Simple focus management: keep focus in input for typing continuity
+      try { input && input.focus(); } catch(_){ }
+    }
+    function close(){
+      popup.classList.remove('open');
+      anchorBtn = null; targetInput = null;
+    }
+    function toggleFor(btn, input){
+      if (popup.classList.contains('open') && anchorBtn === btn) { close(); }
+      else { openFor(btn, input); }
+    }
+
+    // Click handler on emoji button (room)
+    (function(){
+      const btn = document.getElementById('roomEmojiBtn');
+      const input = document.getElementById('roomInput');
+      if (btn && input){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          toggleFor(btn, input);
+        });
+      }
+    })();
+
+    // Delegate clicks on emojis
+    if (grid){
+      grid.addEventListener('click', function(e){
+        const item = e.target.closest('.item');
+        if (!item || !grid.contains(item)) return;
+        const emo = item.getAttribute('data-emo');
+        if (!emo) return;
+        if (targetInput) insertAtCaret(targetInput, emo);
+        // Close after selection
+        close();
+      });
+    }
+
+    // Close on outside click
+    document.addEventListener('mousedown', function(e){
+      if (!popup.classList.contains('open')) return;
+      const isBtn = !!(anchorBtn && (e.target === anchorBtn || (anchorBtn.contains && anchorBtn.contains(e.target))));
+      const isInside = popup.contains(e.target);
+      if (!isBtn && !isInside) close();
+    });
+
+    // Close on Escape
+    window.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && popup.classList.contains('open')) { close(); }
+    });
+
+    // Reposition when viewport changes
+    window.addEventListener('resize', function(){ if (popup.classList.contains('open')) positionPopup(); });
+    window.addEventListener('scroll', function(){ if (popup.classList.contains('open')) positionPopup(); }, true);
+  })();
+
   function setUsersTabCount(count){
     const btn = getTabButtonByTarget('panel-users');
     if(!btn) return;
