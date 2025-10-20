@@ -128,8 +128,8 @@
   .composer { --composer-h: 42px; display: flex; align-items: stretch; gap: .5rem; margin-top: .5rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: .4rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
   .composer textarea, .composer input[type=text] { flex: 1; border: none; outline: none; padding: 0 .65rem; border-radius: 8px; background: #f9fafb; resize: none; max-height: 140px; height: var(--composer-h); min-height: var(--composer-h); line-height: 1.3; }
   .composer textarea:focus, .composer input[type=text]:focus { background: #f3f4f6; }
-  .composer .send-btn { appearance: none; border: none; background: #2563eb; color: #fff; padding: 0 .9rem; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; height: var(--composer-h); min-height: var(--composer-h); }
-  .composer .send-btn:hover { background: #1d4ed8; }
+  .composer .send-btn { appearance: none; border: none; background: #FFFC00; color: #111; padding: 0 .9rem; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; height: var(--composer-h); min-height: var(--composer-h); }
+  .composer .send-btn:hover { filter: brightness(0.95); }
   .composer .send-btn:active { transform: translateY(1px); }
   .composer .emoji-btn { appearance: none; border: 1px solid #e5e7eb; background: #f3f4f6; color: #111; padding: 0 .7rem; border-radius: 8px; cursor: pointer; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; height: var(--composer-h); min-height: var(--composer-h); }
   .composer .emoji-btn:hover { background: #e5e7eb; }
@@ -245,7 +245,7 @@
   :root[data-theme="dark"] #panel-rooms .right .box input[type=button] { background: #111827; color: #e5e7eb; border: 1px solid #334155; }
   :root[data-theme="dark"] #panel-rooms .right .box input[type=button]:hover { background: #0f172a; }
   :root[data-theme="dark"] .emoji-btn { background: #111827; color: #e5e7eb; border-color: #334155; }
-  :root[data-theme="dark"] .send-btn { background: #111827; color: #e5e7eb; border-color: #334155; }
+  :root[data-theme="dark"] .send-btn { background: #FFFC00; color: #111; border-color: #e5e105; }
 
   :root[data-theme="dark"] .small.muted { color: #94a3b8; }
 
