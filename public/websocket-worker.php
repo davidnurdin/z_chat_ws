@@ -184,7 +184,17 @@ $handler = static function (array $event): array  {
         {
             // broadcast to all clients in the same room
             $currentRoom = frankenphp_ws_getStoredInformation($event['Connection'],'currentRoom');
-            sendToTag('room_' . $currentRoom,['type' => 'messageRoom', 'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login') ,  'name' => $currentRoom, 'payload' => $data['message']],$event['Connection']);
+            $color = '#000000';
+            if (isset($data['color']) && is_string($data['color']) && preg_match('/^#[0-9a-fA-F]{6}$/', $data['color'])) {
+                $color = $data['color'];
+            }
+            sendToTag('room_' . $currentRoom,[
+                'type' => 'messageRoom',
+                'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login'),
+                'name' => $currentRoom,
+                'payload' => $data['message'],
+                'color' => $color
+            ],$event['Connection']);
 
         }
 
@@ -194,8 +204,18 @@ $handler = static function (array $event): array  {
 
             if (count($clientTo) > 0)
             {
+                // Optional color validation for private messages
+                $color = '#000000';
+                if (isset($data['color']) && is_string($data['color']) && preg_match('/^#[0-9a-fA-F]{6}$/', $data['color'])) {
+                    $color = $data['color'];
+                }
                 // Send private
-                sendToClient($clientTo[0],['type' => 'messagePrivate', 'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login') ,  'payload' => $data['message']]);
+                sendToClient($clientTo[0],[
+                    'type' => 'messagePrivate',
+                    'from' => frankenphp_ws_getStoredInformation($event['Connection'],'login'),
+                    'payload' => $data['message'],
+                    'color' => $color
+                ]);
             }
 
         }

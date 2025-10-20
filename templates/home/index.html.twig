@@ -28,8 +28,24 @@
   @keyframes tab-flash { 0% { background: #fff59d; } 50% { background: #ffec82; } 100% { background: #fff59d; } }
 
   /* Mobile members icon in current room tab */
-  #tab-current-room .mobile-users-icon { display: none; margin-left: .5rem; cursor: pointer; user-select: none; }
-  #tab-current-room .mobile-users-icon:hover { text-decoration: none; }
+  #tab-current-room .mobile-users-icon {
+    display: none;
+    margin-left: .5rem;
+    cursor: pointer;
+    user-select: none;
+    padding: .2rem .55rem;
+    border: 1px solid #c7d2fe;
+    background: #eef2ff;
+    color: #1d4ed8;
+    border-radius: 999px;
+    line-height: 1;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.03);
+    font-weight: 600;
+  }
+  #tab-current-room .mobile-users-icon:hover { background: #e0e7ff; border-color: #a5b4fc; }
+  #tab-current-room .mobile-users-icon:active { transform: translateY(1px); }
+  #tab-current-room .mobile-users-icon:focus { outline: none; }
+  #tab-current-room .mobile-users-icon:focus-visible { box-shadow: 0 0 0 3px rgba(59,130,246,.35); }
 
   /* Fullscreen mobile users modal */
   #mobileUsersModal { position: fixed; inset: 0; background: #fff; z-index: 9998; display: none; flex-direction: column; }
@@ -127,7 +143,7 @@
     .composer { gap: .4rem; }
     .messages { padding: .4rem; }
     /* Show the members icon inside the current room tab on mobile */
-    #tab-current-room .mobile-users-icon { display: inline-flex; align-items: center; }
+    #tab-current-room .mobile-users-icon { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; min-width: 36px; gap: .35rem; }
   }
   /* Prefer dynamic viewport on mobile UAs that support it */
   @supports (height: 100dvh) {
@@ -148,7 +164,7 @@
     <button class="tab active" data-target="panel-infos">Infos</button>
     <button class="tab gated" data-target="panel-users">Connectés</button>
     <button class="tab gated" data-target="panel-rooms">Salons</button>
-    <button class="tab gated" data-target="panel-current" id="tab-current-room"><span id="tab-current-room-label">-</span><span id="mobileUsersIcon" class="mobile-users-icon" title="Membres" aria-label="Membres" role="button">👥</span></button>
+    <button class="tab gated" data-target="panel-current" id="tab-current-room"><span id="tab-current-room-label">-</span><span id="mobileUsersIcon" class="mobile-users-icon" title="Membres" aria-label="Membres" role="button" aria-haspopup="dialog" tabindex="0">👥</span></button>
     <!-- Private tabs will be appended here -->
   </div>
   <div class="panels">
@@ -181,6 +197,7 @@
           <div class="composer" id="roomComposer">
             <input type="text" id="roomInput" placeholder="Votre message au salon en cours..." onkeydown="if(event.key==='Enter'){ event.preventDefault(); sendFromComposer(this,'room'); }" />
             <button type="button" class="emoji-btn" id="roomEmojiBtn" title="Insérer un emoji">:-)</button>
+            <button type="button" class="emoji-btn color-btn" id="roomColorBtn" title="Couleur du message" aria-label="Couleur du message" style="--clr:#000000; background: var(--clr); color: #000; border:1px solid #e5e7eb;">■</button>
             <button class="send-btn" title="Envoyer" onclick="sendFromComposer(document.getElementById('roomInput'),'room')">-&gt;</button>
           </div>
         </div>
@@ -198,12 +215,16 @@
     </div>
 
     <!-- Private panels will be appended here -->
-  </div>
+    </div>
 </div>
 
 <!-- Emoji picker popup -->
 <div id="emojiPopup" class="emoji-popup" role="dialog" aria-label="Sélecteur d'emoji" aria-modal="false">
   <div class="grid" id="emojiGrid"></div>
+</div>
+<!-- Color picker popup -->
+<div id="colorPopup" class="emoji-popup" role="dialog" aria-label="Palette de couleurs" aria-modal="false">
+  <div class="grid" id="colorGrid"></div>
 </div>
 
 <!-- Mobile users modal -->
@@ -709,12 +730,12 @@
     const label = document.getElementById('tab-current-room-label');
     if(!tab) return;
     if (!currentRoomName || currentRoomName === '-') {
-      const text = 'Salon : -';
+      const text = '-';
       if (label) { label.textContent = text; } else { tab.textContent = text; }
       return;
     }
     const count = (currentRoomUsers && typeof currentRoomUsers.size === 'number') ? currentRoomUsers.size : 0;
-    const text = 'Salon : ' + currentRoomName + ' (' + count + ')';
+    const text = currentRoomName + ' (' + count + ')';
     if (label) { label.textContent = text; } else { tab.textContent = text; }
   }
   function renderCurrentRoomUsers(){
@@ -765,9 +786,20 @@
       '<div class="composer">\n' +
       '  <textarea rows="2" placeholder="Message privé à ' + user + '..." oninput="autosizeTextarea(this)" onkeydown="if(event.key===\'Enter\' && !event.shiftKey){ event.preventDefault(); sendFromComposer(this,\'private\', \'' + user + '\'); }"></textarea>\n' +
       '  <button type="button" class="emoji-btn" title="Insérer un emoji">:-)</button>\n' +
+      '  <button type="button" class="emoji-btn color-btn" title="Couleur du message" aria-label="Couleur du message" style="--clr:#000000; background: var(--clr); color: #000; border:1px solid #e5e7eb;">■</button>\n' +
       '  <button class="send-btn" title="Envoyer" onclick="sendFromComposer(this.previousElementSibling.previousElementSibling,\'private\', \'' + user + '\')">-&gt;</button>\n' +
       '</div>';
     document.querySelector('.panels').appendChild(panel);
+
+    // Ensure private send button targets the correct input even if buttons are added
+    try {
+      const sendBtn = panel.querySelector('.send-btn');
+      if (sendBtn) {
+        sendBtn.onclick = function(){
+          try { const inp = panel.querySelector('textarea, input[type="text"]'); if (inp) sendFromComposer(inp, 'private', user); } catch(_){ }
+        };
+      }
+    } catch(_){ }
 
     // Transform private composer to single-line input
     try {
@@ -799,6 +831,14 @@
         }
       }
     } catch(_){ }
+
+    // Initialize private color button and store default color if absent
+    try {
+      const btn = panel.querySelector('.color-btn');
+      const col = sanitizeRoomColor((privateColors && privateColors.get ? privateColors.get(user) : null) || '#000000');
+      privateColors.set(user, col);
+      if (btn) { btn.style.setProperty('--clr', col); btn.style.background = col; btn.textContent = '■'; }
+    } catch(_){}
 
     // Insert one-time system safety warning
     try {
@@ -924,17 +964,31 @@
       debugLog('Impossible d\'envoyer un message privé à vous‑même.\n');
       return;
     }
-    let trame = {'type': 'writePrivate', 'message': message, 'to': to};
+    const color = sanitizeRoomColor((privateColors && privateColors.get ? privateColors.get(to) : null) || '#000000');
+    let trame = {'type': 'writePrivate', 'message': message, 'to': to, 'color': color};
     socket.send(JSON.stringify(trame));
     debugLog('PM -> ' + to + ': ' + message + '\n');
     const {panel} = ensurePrivateTab(to);
-    appendMessage('messages-private-' + to, currentLogin + ' > ' + message, {bold: true, html: renderUserHTML(currentLogin) + ' &gt; ' + escapeHtml(message), extraClass: ('g-' + genderCodeToClass(currentGender || 'X'))});
+    const html = renderUserHTML(currentLogin) + ' &gt; ' + '<span style="color: ' + color + ';">' + escapeHtml(message) + '</span>';
+    appendMessage('messages-private-' + to, currentLogin + ' > ' + message, {bold: true, html, extraClass: ('g-' + genderCodeToClass(currentGender || 'X'))});
     activateTabByTarget(panel.id);
   }
 
+  const ROOM_COLORS = ['#000000','#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899','#f43f5e','#7f1d1d','#111827','#6b7280'];
+  let currentRoomColor = '#000000';
+  const privateColors = new Map(); // user -> color for private messages
+  function sanitizeRoomColor(c){
+    if (typeof c !== 'string') return '#000000';
+    c = c.trim();
+    if (ROOM_COLORS.indexOf(c) !== -1) return c;
+    // Optionally accept any valid 6-hex color
+    if (/^#[0-9a-fA-F]{6}$/.test(c)) return c;
+    return '#000000';
+  }
   function writeRoom(message){
     if(!message) return;
-    let trame = {'type': 'writeRoom', 'message': message};
+    const color = sanitizeRoomColor(currentRoomColor);
+    let trame = {'type': 'writeRoom', 'message': message, 'color': color};
     socket.send(JSON.stringify(trame));
     debugLog('Room -> ' + message + '\n');
   }
@@ -1099,7 +1153,8 @@
           const from = json.from || '?';
           const payload = json.payload || '';
           const highlight = (from === currentLogin) || (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0);
-          const html = renderUserHTML(from) + ' &gt; ' + escapeHtml(payload);
+          const color = sanitizeRoomColor(json.color || '#000000');
+          const html = renderUserHTML(from) + ' &gt; ' + '<span style="color: ' + color + ';">' + escapeHtml(payload) + '</span>';
           const g = getUserGender(from) || 'X';
           const extraClass = 'g-' + genderCodeToClass(g);
           appendMessage('currentRoomMessages', from + ' > ' + payload, {bold: !!highlight, html, extraClass});
@@ -1112,7 +1167,8 @@
         if (json.type === 'messagePrivate'){
           const from = json.from || 'inconnu';
           const {panel} = ensurePrivateTab(from);
-          const html = renderUserHTML(from) + ' &gt; ' + escapeHtml(json.payload || '');
+          const color = sanitizeRoomColor(json.color || '#000000');
+          const html = renderUserHTML(from) + ' &gt; ' + '<span style="color: ' + color + ';">' + escapeHtml(json.payload || '') + '</span>';
           const g = getUserGender(from) || 'X';
           const extraClass = 'g-' + genderCodeToClass(g);
           appendMessage('messages-private-' + from, (json.from||'?') + ' > ' + (json.payload||''), {html, extraClass});
@@ -1342,6 +1398,108 @@
     window.addEventListener('scroll', function(){ if (popup.classList.contains('open')) positionPopup(); }, true);
   })();
 
+  // Color picker logic
+  (function(){
+    const COLORS = ROOM_COLORS.slice();
+    const popup = document.getElementById('colorPopup');
+    const grid = document.getElementById('colorGrid');
+    let anchorBtn = null;
+
+    function swatch(c){
+      const title = c;
+      return '<div class="item" data-color="' + c + '" title="' + title + '" style="gap:6px;"><div class="emo" style="width:24px;height:24px;border-radius:6px;border:1px solid #e5e7eb;background:' + c + ';"></div></div>';
+    }
+    function populate(){
+      if (!grid) return;
+      grid.innerHTML = COLORS.map(c=>swatch(c)).join('');
+    }
+    function positionPopup(btn){
+      if (!popup || !btn) return;
+      const r = btn.getBoundingClientRect();
+      const left = Math.min(window.innerWidth - popup.offsetWidth - 8, Math.max(8, r.left));
+      let top = r.bottom + 6;
+      if (top + popup.offsetHeight + 8 > window.innerHeight) {
+        top = Math.max(8, r.top - popup.offsetHeight - 6);
+      }
+      popup.style.left = left + 'px';
+      popup.style.top = Math.max(8, top) + 'px';
+    }
+    function openFor(btn){
+      anchorBtn = btn;
+      populate();
+      popup.classList.add('open');
+      positionPopup(btn);
+    }
+    function close(){
+      popup.classList.remove('open');
+      anchorBtn = null;
+    }
+    function toggle(btn){
+      if (popup.classList.contains('open') && anchorBtn === btn) close(); else openFor(btn);
+    }
+    function setButtonColor(btn, color){
+      try {
+        btn.style.setProperty('--clr', color);
+        btn.style.background = color;
+        btn.textContent = '■';
+      } catch(_){ }
+    }
+
+    // Delegated click for any color button
+    document.addEventListener('click', function(e){
+      const btn = e.target && e.target.closest ? e.target.closest('.color-btn') : null;
+      if (!btn) return;
+      e.preventDefault();
+      toggle(btn);
+    });
+
+    // Handle palette click
+    if (grid){
+      grid.addEventListener('click', function(e){
+        const item = e.target.closest('.item');
+        if (!item || !grid.contains(item)) return;
+        const col = item.getAttribute('data-color');
+        if (!col) return;
+        if (anchorBtn){
+          setButtonColor(anchorBtn, col);
+          // Update room color if this is the room button
+          if (anchorBtn.id === 'roomColorBtn'){
+            currentRoomColor = sanitizeRoomColor(col);
+          } else {
+            // If used inside a private panel, store per-user color
+            try {
+              const panel = anchorBtn.closest('.panel');
+              if (panel && typeof panel.id === 'string' && panel.id.indexOf('panel-private-') === 0) {
+                const user = panel.id.substring('panel-private-'.length);
+                privateColors.set(user, sanitizeRoomColor(col));
+              }
+            } catch(_){}
+          }
+        }
+        close();
+      });
+    }
+
+    // Close on outside click
+    document.addEventListener('mousedown', function(e){
+      if (!popup.classList.contains('open')) return;
+      const isBtn = !!(anchorBtn && (e.target === anchorBtn || (anchorBtn.contains && anchorBtn.contains(e.target))));
+      const isInside = popup.contains(e.target);
+      if (!isBtn && !isInside) close();
+    });
+
+    // Close on Escape
+    window.addEventListener('keydown', function(e){ if (e.key === 'Escape' && popup.classList.contains('open')) close(); });
+    window.addEventListener('resize', function(){ if (popup.classList.contains('open') && anchorBtn) positionPopup(anchorBtn); });
+    window.addEventListener('scroll', function(){ if (popup.classList.contains('open') && anchorBtn) positionPopup(anchorBtn); }, true);
+
+    // Initialize room button color on load
+    try {
+      const rb = document.getElementById('roomColorBtn');
+      if (rb) setButtonColor(rb, currentRoomColor);
+    } catch(_){ }
+  })();
+
   function setUsersTabCount(count){
     const btn = getTabButtonByTarget('panel-users');
     if(!btn) return;
@@ -1383,6 +1541,7 @@
     }
 
     if (icon){ icon.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); open(); }); }
+    if (icon){ icon.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }); }
     if (closeBtn){ closeBtn.addEventListener('click', function(e){ e.preventDefault(); close(); }); }
     if (modal){ modal.addEventListener('click', function(e){ if (e.target === modal) { close(); } }); }
 
