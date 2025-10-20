@@ -27,6 +27,18 @@
   .tab.notify { animation: tab-flash 1.2s ease-in-out infinite; border-color: #eab308; }
   @keyframes tab-flash { 0% { background: #fff59d; } 50% { background: #ffec82; } 100% { background: #fff59d; } }
 
+  /* Mobile members icon in current room tab */
+  #tab-current-room .mobile-users-icon { display: none; margin-left: .5rem; cursor: pointer; user-select: none; }
+  #tab-current-room .mobile-users-icon:hover { text-decoration: none; }
+
+  /* Fullscreen mobile users modal */
+  #mobileUsersModal { position: fixed; inset: 0; background: #fff; z-index: 9998; display: none; flex-direction: column; }
+  #mobileUsersModal.open { display: flex; }
+  #mobileUsersModal .hdr { display: flex; align-items: center; justify-content: space-between; padding: .75rem 1rem; border-bottom: 1px solid #eee; font-weight: 600; }
+  #mobileUsersModal .close { font-size: 1.4rem; line-height: 1; cursor: pointer; padding: .25rem .5rem; border-radius: 8px; }
+  #mobileUsersModal .close:hover { background: #f3f4f6; }
+  #mobileUsersContainer { flex: 1; min-height: 0; overflow-y: auto; padding: .5rem; }
+
   /* Panels container fills remaining space */
   .panels { border: 1px solid #ccc; border-radius: 0 8px 8px 8px; background: white; padding: .5rem; flex: 1; min-height: 0; display: flex; }
   .panel { display: none; width: 100%; height: 100%; }
@@ -108,11 +120,14 @@
     .controls { padding: .5rem; gap: .4rem; }
     .tab { padding: .5rem .6rem; }
     .current-room { flex-direction: column; }
-    .current-room .right { width: auto; border-left: none; border-top: 1px solid #eee; padding-left: 0; padding-top: .5rem; }
+    /* Hide the sidebar users list on mobile; it will be shown via popup */
+    #panel-current .current-room .right { display: none !important; }
     .rooms-layout { flex-direction: column; }
     .rooms-layout .right { width: auto; border-left: none; border-top: 1px solid #eee; padding-left: 0; padding-top: .5rem; }
     .composer { gap: .4rem; }
     .messages { padding: .4rem; }
+    /* Show the members icon inside the current room tab on mobile */
+    #tab-current-room .mobile-users-icon { display: inline-flex; align-items: center; }
   }
   /* Prefer dynamic viewport on mobile UAs that support it */
   @supports (height: 100dvh) {
@@ -133,7 +148,7 @@
     <button class="tab active" data-target="panel-infos">Infos</button>
     <button class="tab gated" data-target="panel-users">Connectés</button>
     <button class="tab gated" data-target="panel-rooms">Salons</button>
-    <button class="tab gated" data-target="panel-current" id="tab-current-room">Salon : -</button>
+    <button class="tab gated" data-target="panel-current" id="tab-current-room"><span id="tab-current-room-label">Salon : -</span><span id="mobileUsersIcon" class="mobile-users-icon" title="Membres" aria-label="Membres" role="button">👥</span></button>
     <!-- Private tabs will be appended here -->
   </div>
   <div class="panels">
@@ -188,6 +203,15 @@
 <!-- Emoji picker popup -->
 <div id="emojiPopup" class="emoji-popup" role="dialog" aria-label="Sélecteur d'emoji" aria-modal="false">
   <div class="grid" id="emojiGrid"></div>
+</div>
+
+<!-- Mobile users modal -->
+<div id="mobileUsersModal" aria-hidden="true" role="dialog" aria-label="Connectés au salon">
+  <div class="hdr">
+    <div>Connectés au salon</div>
+    <span id="mobileUsersClose" class="close" aria-label="Fermer">×</span>
+  </div>
+  <div id="mobileUsersContainer"></div>
 </div>
 
 <script>
@@ -627,13 +651,15 @@
   }
   function updateCurrentRoomTabTitle(){
     const tab = document.getElementById('tab-current-room');
+    const label = document.getElementById('tab-current-room-label');
     if(!tab) return;
     if (!currentRoomName || currentRoomName === '-') {
-      tab.textContent = 'Salon : -';
+      if (label) { label.textContent = 'Salon : -'; } else { tab.textContent = 'Salon : -'; }
       return;
     }
     const count = (currentRoomUsers && typeof currentRoomUsers.size === 'number') ? currentRoomUsers.size : 0;
-    tab.textContent = 'Salon : ' + currentRoomName + ' (' + count + ')';
+    const text = 'Salon : ' + currentRoomName + ' (' + count + ')';
+    if (label) { label.textContent = text; } else { tab.textContent = text; }
   }
   function renderCurrentRoomUsers(){
     const box = document.getElementById('currentRoomUsers');
@@ -1168,5 +1194,44 @@
       btn.textContent = base;
     }
   }
+
+  // Mobile users modal logic
+  (function(){
+    const icon = document.getElementById('mobileUsersIcon');
+    const closeBtn = document.getElementById('mobileUsersClose');
+    const modal = document.getElementById('mobileUsersModal');
+    const container = document.getElementById('mobileUsersContainer');
+
+    function open(){
+      try {
+        const box = document.getElementById('currentRoomUsers');
+        if (container && box && box.parentNode !== container) {
+          container.appendChild(box);
+        }
+        if (modal){ modal.classList.add('open'); modal.setAttribute('aria-hidden','false'); }
+        try { document.documentElement.style.overflow = 'hidden'; } catch(_){ }
+      } catch(_){ }
+    }
+    function close(){
+      try {
+        const right = document.querySelector('#panel-current .right');
+        const box = document.getElementById('currentRoomUsers');
+        if (right && box && box.parentNode !== right) {
+          right.appendChild(box);
+        }
+        if (modal){ modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); }
+        try { document.documentElement.style.overflow = ''; } catch(_){ }
+      } catch(_){ }
+    }
+
+    if (icon){ icon.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); open(); }); }
+    if (closeBtn){ closeBtn.addEventListener('click', function(e){ e.preventDefault(); close(); }); }
+    if (modal){ modal.addEventListener('click', function(e){ if (e.target === modal) { close(); } }); }
+
+    // Expose for debugging if needed
+    window.openMobileUsersModal = open;
+    window.closeMobileUsersModal = close;
+  })();
+
 </script>
 {% endblock %}
