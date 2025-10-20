@@ -15,7 +15,7 @@ EXPOSE 80
 EXPOSE 443
 
 # install GIT and Composer in image
-RUN apt-get update && apt-get install -y git unzip libnss3-tools && \
+RUN apt-get update && apt-get install -y git unzip libnss3-tools nodejs npm && \
     curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
 # Install project dependencies
