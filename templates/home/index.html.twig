@@ -61,10 +61,17 @@
   .msg { margin: .25rem 0; padding: .2rem .35rem; border-radius: 4px; transition: background-color .15s ease, color .15s ease; }
   .msg:hover { background: #f0f2f5; }
   .msg.self { font-weight: 700; }
+  .msg.system { color: #b91c1c; font-weight: 700; }
   .msg .meta { color: #666; font-size: .85em; }
   #usersListPanel .msg,
   #currentRoomUsers .msg,
   #currentRoomMessages .msg { cursor: pointer; }
+
+  /* Colored username tags */
+  .user-tag { font-weight: inherit; }
+  .user-tag.m { color: #2563eb; }
+  .user-tag.f { color: #ec4899; }
+  .user-tag.x { color: #a3a312; }
 
   .composer { --composer-h: 42px; display: flex; align-items: stretch; gap: .5rem; margin-top: .5rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: .4rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
   .composer textarea, .composer input[type=text] { flex: 1; border: none; outline: none; padding: 0 .65rem; border-radius: 8px; background: #f9fafb; resize: none; max-height: 140px; height: var(--composer-h); min-height: var(--composer-h); line-height: 1.3; }
@@ -100,7 +107,10 @@
 <div class="chat-wrapper">
   <div class="controls">
     <input type="text" id="login" value="" placeholder="login" />
-    <input type="button" id="btn1" value="Authenticate" onclick="authenticate()">
+    <label><input type="radio" name="gender" value="H"> H</label>
+    <label><input type="radio" name="gender" value="F"> F</label>
+    <label><input type="radio" name="gender" value="X" checked> X</label>
+    <input type="button" id="btn1" value="Se connecter" onclick="authenticate()">
   </div>
 
   <div class="tabs" id="tabs">
@@ -562,21 +572,41 @@
   let currentRoomName = null;
   let currentRoomUsers = new Set();
   let currentLogin = null;
+  let currentGender = 'X';
+  const userGenders = new Map(); // user -> 'H' | 'F' | 'X'
   function isSelf(user){ return !!currentLogin && user === currentLogin; }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]); }); }
+  function genderCodeToClass(g){ return g === 'H' ? 'm' : (g === 'F' ? 'f' : 'x'); }
+  function renderUserHTML(user){
+    const g = userGenders.get(user) || (isSelf(user) ? currentGender : 'X');
+    const cls = 'user-tag ' + genderCodeToClass(g);
+    return '<span class="' + cls + '\">' + escapeHtml(user) + '</span>';
+  }
   function setCurrentRoomName(name){
     currentRoomName = name || '-';
+    updateCurrentRoomTabTitle();
+  }
+  function updateCurrentRoomTabTitle(){
     const tab = document.getElementById('tab-current-room');
-    if(tab){ tab.textContent = 'Salon : ' + currentRoomName; }
+    if(!tab) return;
+    if (!currentRoomName || currentRoomName === '-') {
+      tab.textContent = 'Salon : -';
+      return;
+    }
+    const count = (currentRoomUsers && typeof currentRoomUsers.size === 'number') ? currentRoomUsers.size : 0;
+    tab.textContent = 'Salon : ' + currentRoomName + ' (' + count + ')';
   }
   function renderCurrentRoomUsers(){
     const box = document.getElementById('currentRoomUsers');
     if(!box) return;
     if(!currentRoomUsers || currentRoomUsers.size===0){
       box.innerHTML = '<div class="muted small">Personne</div>';
+      updateCurrentRoomTabTitle();
       return;
     }
     const list = Array.from(currentRoomUsers).sort();
-    box.innerHTML = list.map(u=>'<div class="msg' + (isSelf(u) ? ' self' : '') + '">' + u + '</div>').join('');
+    box.innerHTML = list.map(function(u){ return '<div class="msg' + (isSelf(u) ? ' self' : '') + '\">' + renderUserHTML(u) + '</div>'; }).join('');
+    updateCurrentRoomTabTitle();
   }
 
   const privateTabs = new Map(); // user -> {tab, panel}
@@ -602,7 +632,7 @@
     tab.className = 'tab closeable';
     const panelId = 'panel-private-' + user;
     tab.dataset.target = panelId;
-    tab.innerHTML = 'Privé: ' + user + ' <span class="close" title="Fermer">×</span>';
+    tab.innerHTML = 'Privé: ' + renderUserHTML(user) + ' <span class="close" title="Fermer">×</span>';
 
     // Insert after existing tabs
     tabs.appendChild(tab);
@@ -637,14 +667,24 @@
         if (box) {
           hist.forEach(m => {
             const d = document.createElement('div');
-            d.className = 'msg';
-            d.textContent = m.text;
-            if (m.bold) d.style.fontWeight = '700';
+            d.className = 'msg' + (m && m.system ? ' system' : '');
+            if (m && typeof m.text !== 'undefined') d.textContent = m.text;
+            if (m && m.bold) d.style.fontWeight = '700';
             box.appendChild(d);
           });
           // Scroll to bottom after restoration
           box.scrollTop = box.scrollHeight;
         }
+      }
+    } catch(_){ }
+
+    // Insert one-time system safety warning
+    try {
+      const boxId = 'messages-private-' + user;
+      const hist0 = privateHistory.get(user);
+      const alreadyWarned = Array.isArray(hist0) && hist0.some(function(m){ return m && m.system === true; });
+      if (!alreadyWarned) {
+        appendMessage(boxId, 'Vous ne devez jamais communiquer des informations personnelles à votre interlocuteur', {system: true});
       }
     } catch(_){}
 
@@ -668,7 +708,14 @@
     const isNearBottom = forceAuto || ((box.scrollTop + box.clientHeight) >= (box.scrollHeight - threshold));
     const div = document.createElement('div');
     div.className = 'msg';
-    div.textContent = text;
+    if (opts && opts.system) {
+      div.className += ' system';
+    }
+    if (opts && opts.html) {
+      div.innerHTML = opts.html;
+    } else {
+      div.textContent = text;
+    }
     if (opts && opts.bold) {
       div.style.fontWeight = '700';
     }
@@ -679,10 +726,10 @@
       if (typeof containerId === 'string' && containerId.indexOf('messages-private-') === 0){
         const user = containerId.substring('messages-private-'.length);
         const arr = privateHistory.get(user) || [];
-        arr.push({text: text, bold: !!(opts && opts.bold)});
+        arr.push({text: text, bold: !!(opts && opts.bold), system: !!(opts && opts.system)});
         privateHistory.set(user, arr);
       }
-    } catch(_){}
+    } catch(_){ }
 
     // Auto-scroll: always for Infos/Debug; else only if user wasn't reading older messages
     if (forceAuto || isNearBottom) {
@@ -738,7 +785,7 @@
     socket.send(JSON.stringify(trame));
     debugLog('PM -> ' + to + ': ' + message + '\n');
     const {panel} = ensurePrivateTab(to);
-    appendMessage('messages-private-' + to, 'Moi : ' + message);
+    appendMessage('messages-private-' + to, currentLogin + ' > ' + message, {bold: true, html: renderUserHTML(currentLogin) + ' &gt; ' + escapeHtml(message)});
     activateTabByTarget(panel.id);
   }
 
@@ -756,7 +803,9 @@
   }
 
   function authenticate(){
-    let trame = { 'type' : 'auth' , 'login' : document.getElementById('login').value , 'password' : 'pass' };
+    const genderEl = document.querySelector('input[name="gender"]:checked');
+    const gender = genderEl ? genderEl.value : 'X';
+    let trame = { 'type' : 'auth' , 'login' : document.getElementById('login').value , 'password' : 'pass', 'gender': gender };
     socket.send(JSON.stringify(trame));
     debugLog('Authentication sent...\n');
   }
@@ -785,6 +834,11 @@
           if (json.status === 'ok'){
             debugLog('Authentication successful\n');
             currentLogin = json.login;
+            currentGender = json.gender || (function(){
+              var ge = document.querySelector('input[name="gender"]:checked');
+              return ge ? ge.value : 'X';
+            })();
+            try { userGenders.set(currentLogin, currentGender); } catch(_){ }
             document.title = json.login;
             revealGatedUI();
             try { var c = document.querySelector('.controls'); if (c) c.style.display = 'none'; } catch(_){}
@@ -809,7 +863,7 @@
             try { const ri = document.getElementById('roomInput'); if (ri) ri.value = ''; } catch(_) {}
             currentRoomUsers = new Set();
             renderCurrentRoomUsers();
-            appendMessage('currentRoomMessages', 'Entrée dans le salon: ' + json.name);
+            appendMessage('currentRoomMessages', 'Entrée dans le salon: ' + json.name, {system: true});
             activateTabByTarget('panel-current');
           }
         }
@@ -822,7 +876,8 @@
           const from = json.from || '?';
           const payload = json.payload || '';
           const highlight = (from === currentLogin) || (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0);
-          appendMessage('currentRoomMessages', from + ' > ' + payload, {bold: !!highlight});
+          const html = renderUserHTML(from) + ' &gt; ' + escapeHtml(payload);
+          appendMessage('currentRoomMessages', from + ' > ' + payload, {bold: !!highlight, html});
           // If someone addresses us in the room, notify the Current Room tab (no auto-switch)
           if (typeof currentLogin === 'string' && payload.indexOf(currentLogin + ' >') === 0) {
             notifyTab('panel-current');
@@ -832,7 +887,8 @@
         if (json.type === 'messagePrivate'){
           const from = json.from || 'inconnu';
           const {panel} = ensurePrivateTab(from);
-          appendMessage('messages-private-' + from, (json.from||'?') + ' > ' + json.payload);
+          const html = renderUserHTML(from) + ' &gt; ' + escapeHtml(json.payload || '');
+          appendMessage('messages-private-' + from, (json.from||'?') + ' > ' + (json.payload||''), {html});
           // Do not auto-switch on incoming private messages; just notify the tab
           notifyTab(panel.id);
         }
@@ -840,15 +896,25 @@
         if (json.type === 'listUserInRoom'){
           try {
             const list = json.list;
+            // Normalize to array of {login, gender}
+            let entries = [];
+            if (Array.isArray(list)) {
+              if (list.length && typeof list[0] === 'object') {
+                entries = list.map(function(o){ return {login: o.login, gender: o.gender || 'X'}; });
+              } else {
+                entries = list.map(function(u){ return {login: u, gender: userGenders.get(u) || 'X'}; });
+              }
+            } else if (typeof list === 'string') {
+              const arr = list.split(',').map(s=>s.trim()).filter(Boolean);
+              entries = arr.map(function(u){ return {login: u, gender: userGenders.get(u) || 'X'}; });
+            }
+
+            // Update gender map
+            entries.forEach(function(e){ if (e && e.login) userGenders.set(e.login, e.gender || 'X'); });
+
             // Update current room sidebar if the payload matches current room
             if (json.room && json.room === currentRoomName) {
-              if (Array.isArray(list)) {
-                currentRoomUsers = new Set(list);
-              } else if (typeof list === 'string') {
-                currentRoomUsers = new Set(list.split(',').map(s=>s.trim()).filter(Boolean));
-              } else {
-                currentRoomUsers = new Set();
-              }
+              currentRoomUsers = new Set(entries.map(e=>e.login));
               renderCurrentRoomUsers();
             }
 
@@ -856,10 +922,13 @@
             const panel = document.getElementById('usersListPanel');
             const title = 'Utilisateurs dans le salon (' + (json.room||'?') + ')';
             let html = '<div class="small muted">' + title + '</div>';
-            if (Array.isArray(list)) {
-              html += list.map(u => '<div class="msg' + (u===currentLogin ? ' self' : '') + '">' + u + '</div>').join('');
+            if (entries.length) {
+              html += entries.map(function(e){
+                const selfCls = (e.login===currentLogin ? ' self' : '');
+                return '<div class="msg' + selfCls + '\">' + renderUserHTML(e.login) + '</div>';
+              }).join('');
             } else {
-              html += '<div class="msg">' + (list ?? '') + '</div>';
+              html += '<div class="msg">' + (Array.isArray(list) ? '' : (list ?? '')) + '</div>';
             }
             panel.innerHTML = html;
             // Do not auto-switch to the Users tab here; keep focus on the current room.
@@ -875,8 +944,21 @@
             const list = json.list;
             const title = 'Utilisateurs connectés';
             let html = '<div class="small muted">' + title + '</div>';
+            let entries = [];
             if (Array.isArray(list)) {
-              html += list.map(u => '<div class="msg' + (u===currentLogin ? ' self' : '') + '">' + u + '</div>').join('');
+              if (list.length && typeof list[0] === 'object') {
+                entries = list.map(function(o){ return {login: o.login, gender: o.gender || 'X'}; });
+              } else {
+                entries = list.map(function(u){ return {login: u, gender: userGenders.get(u) || 'X'}; });
+              }
+            }
+            // Update gender map
+            entries.forEach(function(e){ if (e && e.login) userGenders.set(e.login, e.gender || 'X'); });
+            if (entries.length) {
+              html += entries.map(function(e){
+                const selfCls = (e.login===currentLogin ? ' self' : '');
+                return '<div class="msg' + selfCls + '\">' + renderUserHTML(e.login) + '</div>';
+              }).join('');
             } else {
               html += '<div class="msg">' + (list ?? '') + '</div>';
             }
@@ -888,7 +970,10 @@
         }
 
         if (json.type === 'userInRoom'){
-          appendMessage('currentRoomMessages', '[JOIN] ' + json.user + ' a rejoint ' + json.room);
+          appendMessage('currentRoomMessages', '[JOIN] ' + json.user + ' a rejoint ' + json.room, {system: true});
+          if (json.user && json.gender) {
+            try { userGenders.set(json.user, json.gender || 'X'); } catch(_){}
+          }
           if (json.room && json.room === currentRoomName && json.user){
             currentRoomUsers.add(json.user);
             renderCurrentRoomUsers();
@@ -896,7 +981,7 @@
         }
 
         if (json.type === 'userOutRoom'){
-          appendMessage('currentRoomMessages', '[QUIT] ' + json.user + ' a quitté ' + json.room);
+          appendMessage('currentRoomMessages', '[QUIT] ' + json.user + ' a quitté ' + json.room, {system: true});
           if (json.room && json.room === currentRoomName && json.user){
             currentRoomUsers.delete(json.user);
             renderCurrentRoomUsers();

@@ -69,8 +69,12 @@ $handler = static function (array $event): array  {
             // get all users with tag standardUser
             $clients = frankenphp_ws_getClientsByTag($data['userType']);
             $list = [];
-            foreach ($clients as $client)
-                $list[] = frankenphp_ws_getStoredInformation($client,'login');
+            foreach ($clients as $client) {
+                $list[] = [
+                    'login' => frankenphp_ws_getStoredInformation($client,'login'),
+                    'gender' => frankenphp_ws_getStoredInformation($client,'gender') ?: 'X'
+                ];
+            }
             sendToClient($event['Connection'],['type' => 'listAllUsers', 'list' => $list]);
             return ['ok' => true];
 
@@ -101,7 +105,9 @@ $handler = static function (array $event): array  {
                 }
                 else {
                     frankenphp_ws_setStoredInformation($event['Connection'], 'login', $data['login']);
-                    sendToClient($event['Connection'],['type' => 'auth', 'status' => 'ok', 'login' => $data['login']]);
+                    $gender = isset($data['gender']) ? $data['gender'] : 'X';
+                    frankenphp_ws_setStoredInformation($event['Connection'], 'gender', $gender);
+                    sendToClient($event['Connection'],['type' => 'auth', 'status' => 'ok', 'login' => $data['login'], 'gender' => $gender]);
                     // add a tag standard user
                     frankenphp_ws_tagClient($event['Connection'], 'standardUser');;
                 }
@@ -149,8 +155,16 @@ $handler = static function (array $event): array  {
             $list = [];
             foreach ($clients as $client)
             {
-                $list[] = frankenphp_ws_getStoredInformation($client,'login');
-                sendToClient($client,['type' => 'userInRoom', 'room' => $data['name'] , 'user' => frankenphp_ws_getStoredInformation($event['Connection'],'login')  ]);
+                $list[] = [
+                    'login' => frankenphp_ws_getStoredInformation($client,'login'),
+                    'gender' => frankenphp_ws_getStoredInformation($client,'gender') ?: 'X'
+                ];
+                sendToClient($client,[
+                    'type' => 'userInRoom',
+                    'room' => $data['name'],
+                    'user' => frankenphp_ws_getStoredInformation($event['Connection'],'login'),
+                    'gender' => frankenphp_ws_getStoredInformation($event['Connection'],'gender') ?: 'X'
+                ]);
             }
 
             frankenphp_ws_tagClient($event['Connection'], 'room_' . $data['name']);
@@ -158,7 +172,10 @@ $handler = static function (array $event): array  {
             sendToClient($event['Connection'], ['type' => 'enterRoom', 'status' => 'ok' , 'name' => $data['name']]);
 
             // add me
-            $list[] = frankenphp_ws_getStoredInformation($event['Connection'],'login');
+            $list[] = [
+                'login' => frankenphp_ws_getStoredInformation($event['Connection'],'login'),
+                'gender' => frankenphp_ws_getStoredInformation($event['Connection'],'gender') ?: 'X'
+            ];
             sendToClient($event['Connection'], ['type' => 'listUserInRoom', 'room' => $data['name'] , 'list' => $list]);
 
         }
