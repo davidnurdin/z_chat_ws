@@ -9,10 +9,14 @@
 	}
 }
 
-# {$SERVER_NAME:localhost}:80 si traefik devant
+# {$SERVER_NAME:localhost}:80 si traefik devant et qu'on veux servir port 80
+
 {$SERVER_NAME:localhost} {
 	root * ./public
-	route {
+    # si on est derriere traefik et qu'on veux un autosigné
+    tls internal
+
+    route {
 		handle_path /ws/* {
 			route {
 				websocket
