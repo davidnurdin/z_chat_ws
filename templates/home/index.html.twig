@@ -850,7 +850,7 @@
   }
 
   // WebSocket connection
-  const socket = new WebSocket('wss://localhost/ws/chat');
+  const socket = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/chat');
   socket.addEventListener('open', function(){
     debugLog('WebSocket is connected...\n');
     socket.addEventListener('close', function(){ console.log('WebSocket is closed...'); });
