@@ -1371,7 +1371,7 @@
 
         if (json.type === 'getTimePing'){
           try {
-            const ms = ((json.time || 0) / 100000).toFixed(2);
+            const ms = ((json.time || 0) / 1000000).toFixed(3);
             const tstr = new Date().toLocaleTimeString();
             const el = document.getElementById('lastPingLine');
             if (el) { el.textContent = 'Last ping: ' + ms + ' ms — reçu à ' + tstr; }
