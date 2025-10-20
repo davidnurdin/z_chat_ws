@@ -9,6 +9,7 @@
 	}
 }
 
+# {$SERVER_NAME:localhost}:80 si traefik devant
 {$SERVER_NAME:localhost} {
 	root * ./public
 	route {

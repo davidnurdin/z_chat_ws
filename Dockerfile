@@ -14,5 +14,13 @@ COPY . /app
 EXPOSE 80
 EXPOSE 443
 
+# install GIT and Composer in image
+RUN apt-get update && apt-get install -y git unzip && \
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Install project dependencies
+RUN composer install --no-dev --optimize-autoloader
+
+
 # Commande de démarrage
 ENTRYPOINT ["/app/websocket", "run"]
