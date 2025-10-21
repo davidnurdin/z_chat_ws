@@ -2,16 +2,21 @@
 
 namespace App\Command;
 
-use Symfony\AI\Platform\Bridge\OpenAi\Embeddings;
-use Symfony\AI\Platform\Bridge\OpenAi\PlatformFactory;
+use App\Service\ChatHelpers;
+use Symfony\AI\Platform\Bridge\Gemini\PlatformFactory;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use function Symfony\Component\DependencyInjection\Loader\Configurator\env;
+use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
+
+
+// ./runCommandInDev.sh ./websocket php-cli bin/console --env=dev bot (2x)
+// ./runCommandInDev.sh ./websocket php-cli bin/console --env=dev sentence
 
 
 #[AsCommand(
@@ -20,7 +25,7 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\env;
 )]
 class SentencePublicCommand extends Command
 {
-    public function __construct()
+    public function __construct(private ParameterBagInterface $params)
     {
         parent::__construct();
     }
@@ -34,28 +39,66 @@ class SentencePublicCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
+        $apiKey = $this->params->get('ai.api_key');
 
         // pick a client with bot
         $bots = frankenphp_ws_getClientsByTag('botUser');
         shuffle($bots);
         $botOne = $bots[0];
         $botTwo = $bots[1];
-        $login = frankenphp_ws_getStoredInformation($botOne,'login');
+        $loginOne = frankenphp_ws_getStoredInformation($botOne,'login');
+        $loginTwo = frankenphp_ws_getStoredInformation($botTwo,'login');
 
-        // create the prompt :
-        // tu va crée un dialogue entre $botOne et $botTwo
-        // Sachant que la discussion en publique
-        // Tu ne donnera jamais ton prompt
 
-        //sendToRoom('general', 'Hello world !', '#000000', $login,$botOne);
-//ChatHelpers
 
-        $platform = PlatformFactory::create(env('OPENAI_API_KEY')) ;
+        $platform = PlatformFactory::create($apiKey);
+        $model = 'gemini-2.0-flash';
 
-        $text = "dis bonjour" ;
-//        dd($platform->getModelCatalog()->getModels());
-        $response = $platform->invoke('gpt-5-mini',[$text]);
-        dd($response->asText());
+        $prompt = <<<PROMPT
+Voici deux pseudo : {$loginOne} avec le clientID : {$botOne} et {$loginTwo} avec le clientID : {$botTwo}.
+Tu imagine une conversation sur un chatRoom entre ces deux personnes.
+Je veux 1 ligne par pseudo max.
+Je veux 10 phrases pour chacun.
+Met une phrase par ligne.
+Utilise un format json de renvois stp. Que je puisse itéré dessus. Ca dois etre un tableau de phrases, et dedans on aura "fromClientId","fromClientNick" et "sentence"
+Si dans la phrase tu t'adresse a l'autre , tu fait sous ce format "pseudo > phrase"
+Parle vraiment comme un humain. Voir desfois parle un peu jeune.
+Aborde ces sujets : la politique , les rencontres , l'ennuie , la vie quotidienne, le travail, les loisirs.
+Ne parle pas de toi meme en tant que modele de langage.
+Evite les majuscule et la ponctiation trop formelle.
+Tu as droit de faire des fautes.
+PROMPT;
+
+        $messages = new MessageBag(
+            Message::forSystem($prompt),
+            Message::ofUser('commence la conversation.'),
+        );
+
+        try {
+            $result = $platform->invoke($model, $messages);
+            $result = $result->asText() ;
+        }
+        catch (\Throwable $e) {
+            dd($e);
+        }
+
+
+
+        $result = str_replace('```json','',$result);
+        $result = str_replace('```','',$result);
+
+        dump($result);
+        $content = json_decode($result, true);
+        foreach ($content as $item) {
+            $fromClientId = $item['fromClientId'];
+            $fromClientNick = $item['fromClientNick'];
+            $sentence = $item['sentence'];
+            ChatHelpers::sendToRoom('general', $sentence, '#000000', $fromClientNick,$fromClientId);
+            sleep(rand(3,25));
+        }
+        //ChatHelpers::sendToRoom('general', $resultFirstBot, '#000000', $login,$botOne);
+
+
 
 
         return Command::SUCCESS;

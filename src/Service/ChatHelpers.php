@@ -54,7 +54,7 @@ class ChatHelpers
     {
         // keep only last 20 entries
         $entries = array_values(array_slice($entries, -20));
-        frankenphp_ws_global_set(room_history_key($room), json_encode($entries));
+        frankenphp_ws_global_set(self::room_history_key($room), json_encode($entries));
     }
 
     public static  function room_history_append(string $room, array $entry): void
