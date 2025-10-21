@@ -11,6 +11,7 @@
         "symfony/dotenv": "7.3.*",
         "symfony/flex": "^2",
         "symfony/framework-bundle": "7.3.*",
+        "symfony/property-info": "7.3.*",
         "symfony/runtime": "7.3.*",
         "symfony/twig-bundle": "7.3.*",
         "symfony/webpack-encore-bundle": "^2.3",
@@ -69,6 +70,7 @@
         }
     },
     "require-dev": {
+        "symfony/ai-platform": "dev-main",
         "symfony/maker-bundle": "^1.64",
         "symfony/stopwatch": "7.3.*",
         "symfony/web-profiler-bundle": "7.3.*"
